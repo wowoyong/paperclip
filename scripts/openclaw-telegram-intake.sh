@@ -22,6 +22,7 @@ determine_routing() {
   HAS_STRATEGIC_INTENT=0
 
   HAS_ARCHIVE_INTENT=0
+  HAS_LINK_INTENT=0
   HAS_RESEARCH_INTENT=0
   HAS_UX_INTENT=0
   HAS_FRONTEND_INTENT=0
@@ -30,8 +31,12 @@ determine_routing() {
   HAS_PLANNING_INTENT=0
   HAS_OPERATIONS_INTENT=0
 
-  if [[ "$lower_text" =~ (source\ pack|evidence|citation|citations|references|reference|archive|raw\ source|1차\ 자료|출처|레퍼런스|근거\ 자료|자료\ 수집|아카이브) ]]; then
+  if [[ "$lower_text" =~ (source\ pack|evidence|citation|citations|archive|raw\ source|1차\ 자료|출처|레퍼런스|근거\ 자료|자료\ 수집|아카이브|원문\ 링크|공식\ 링크) ]]; then
     HAS_ARCHIVE_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (youtube|youtu\.be|video|영상|동영상|링크|url|http://|https://|article|blog\ post|webpage|landing\ page|문서\ 링크|페이지\ 링크) ]]; then
+    HAS_LINK_INTENT=1
   fi
 
   if [[ "$lower_text" =~ (compare|pricing|price|latest|docs|documentation|vendor|research|recommend|recommendation|policy|policies|terms|조사|비교|가격|최신|문서|업체|추천|정책|약관) ]]; then
@@ -71,7 +76,7 @@ determine_routing() {
   fi
 
   IMPLEMENTATION_INTENT_COUNT=$((HAS_UX_INTENT + HAS_FRONTEND_INTENT + HAS_BACKEND_INTENT + HAS_IMPLEMENT_INTENT + HAS_PLANNING_INTENT))
-  TOTAL_ACTIVE_INTENTS=$((HAS_ARCHIVE_INTENT + HAS_RESEARCH_INTENT + HAS_UX_INTENT + HAS_FRONTEND_INTENT + HAS_BACKEND_INTENT + HAS_IMPLEMENT_INTENT + HAS_PLANNING_INTENT + HAS_OPERATIONS_INTENT))
+  TOTAL_ACTIVE_INTENTS=$((HAS_ARCHIVE_INTENT + HAS_LINK_INTENT + HAS_RESEARCH_INTENT + HAS_UX_INTENT + HAS_FRONTEND_INTENT + HAS_BACKEND_INTENT + HAS_IMPLEMENT_INTENT + HAS_PLANNING_INTENT + HAS_OPERATIONS_INTENT))
 
   if [[ "$HAS_STRATEGIC_INTENT" -eq 1 ]]; then
     COMPLEXITY="strategic"
@@ -100,6 +105,10 @@ determine_routing() {
     ASSIGNEE_ID="$ARCHIVIST_ID"
     ASSIGNEE_NAME="ResearchArchivist"
     ROUTE_REASON="matched source gathering / evidence intent"
+  elif [[ "$HAS_LINK_INTENT" -eq 1 && "$HAS_RESEARCH_INTENT" -eq 0 && "$IMPLEMENTATION_INTENT_COUNT" -eq 0 ]]; then
+    ASSIGNEE_ID="$LINK_ID"
+    ASSIGNEE_NAME="LinkBriefAnalyst"
+    ROUTE_REASON="matched link / youtube analysis intent"
   elif [[ "$HAS_RESEARCH_INTENT" -eq 1 ]]; then
     ASSIGNEE_ID="$RESEARCH_ID"
     ASSIGNEE_NAME="ResearchScout"
@@ -150,6 +159,7 @@ run_self_test() {
   CODEX_ID="codex"
   PLANNER_ID="planner"
   ARCHIVIST_ID="archivist"
+  LINK_ID="link"
   UX_ID="ux"
   FRONTEND_ID="frontend"
   BACKEND_ID="backend"
@@ -174,6 +184,7 @@ research-heavy-db|최신 Supabase와 Neon 가격/정책 차이를 비교해서 �
 research-with-ticketing|최신 Supabase와 Neon 가격/정책 차이를 비교해서 추천안 정리하고 Paperclip 이슈로 만들고 담당자 배정까지 해줘|ResearchScout
 research-only|OpenAI/Anthropic latest pricing and policy comparison with references|ResearchScout
 archive-only|공식 문서와 가격 페이지 원문 링크만 모아서 source pack 형태로 정리해줘|ResearchArchivist
+link-only|이 유튜브 링크 내용 요약하고 핵심 액션 아이템만 정리해줘 https://youtu.be/example|LinkBriefAnalyst
 planning-only|이 기능 아이디어를 PRD 형태로 정리하고 acceptance criteria까지 만들어줘|ProductPlanner
 ux-only|온보딩 플로우와 empty loading error 상태를 UX 관점에서 설계해줘|UXUIDesigner
 frontend-only|React 기준으로 온보딩 컴포넌트 구조와 상태 관리를 구현 태스크로 쪼개줘|FrontendEngineer
@@ -246,11 +257,12 @@ RESEARCH_ID="$(agent_id_by_url_key researchscout)"
 CODEX_ID="$(agent_id_by_url_key codexcoder)"
 PLANNER_ID="$(agent_id_by_url_key productplanner)"
 ARCHIVIST_ID="$(agent_id_by_url_key researcharchivist)"
+LINK_ID="$(agent_id_by_url_key linkbriefanalyst)"
 UX_ID="$(agent_id_by_url_key uxuidesigner)"
 FRONTEND_ID="$(agent_id_by_url_key frontendengineer)"
 BACKEND_ID="$(agent_id_by_url_key backendengineer)"
 
-if [[ -z "$CHIEF_ID" || -z "$RESEARCH_ID" || -z "$CODEX_ID" || -z "$PLANNER_ID" || -z "$ARCHIVIST_ID" || -z "$UX_ID" || -z "$FRONTEND_ID" || -z "$BACKEND_ID" ]]; then
+if [[ -z "$CHIEF_ID" || -z "$RESEARCH_ID" || -z "$CODEX_ID" || -z "$PLANNER_ID" || -z "$ARCHIVIST_ID" || -z "$UX_ID" || -z "$FRONTEND_ID" || -z "$BACKEND_ID" || -z "$LINK_ID" ]]; then
   echo "failed to resolve one or more Paperclip agent ids" >&2
   exit 1
 fi
