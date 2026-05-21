@@ -70,6 +70,190 @@ export function issueRoutes(db: Db, storage: StorageService) {
     });
   }
 
+  function summarizeIssueDescription(description: string | null | undefined) {
+    const raw = typeof description === "string" ? description.trim() : "";
+    if (!raw) return "_No description provided yet._";
+    return raw.length > 1200 ? `${raw.slice(0, 1200).trim()}\n\n...[truncated]` : raw;
+  }
+
+  function normalizeOwnerLabel(value: string) {
+    return value
+      .trim()
+      .replace(/^`+|`+$/g, "")
+      .replace(/[).,:;]+$/g, "")
+      .trim();
+  }
+
+  function extractStructuredOwnerLabel(text: string | null | undefined) {
+    if (typeof text !== "string" || text.trim().length === 0) return null;
+
+    const patterns = [
+      /(?:^|\n)\s*[-*]?\s*(?:다음\s*오너|추천\s*오너|권장\s*오너|next\s*owner|recommended\s*owner|owner)\s*:\s*`?([^\n`]+)`?/i,
+      /(?:^|\n)\s*(?:다음\s*오너|추천\s*오너|권장\s*오너|next\s*owner|recommended\s*owner|owner)\s*:\s*`?([^\n`]+)`?/i,
+    ];
+
+    for (const pattern of patterns) {
+      const match = text.match(pattern);
+      const raw = match?.[1];
+      if (!raw) continue;
+      const normalized = normalizeOwnerLabel(raw);
+      if (normalized) return normalized;
+    }
+
+    return null;
+  }
+
+  async function resolveAgentIdByOwnerLabel(companyId: string, ownerLabel: string | null | undefined) {
+    if (!ownerLabel) return null;
+    const normalized = normalizeOwnerLabel(ownerLabel).toLowerCase();
+    if (!normalized) return null;
+
+    const companyAgents = await agentsSvc.list(companyId);
+    const matched = companyAgents.find((agent) => {
+      const byName = agent.name.trim().toLowerCase() === normalized;
+      const byUrlKey = (agent.urlKey ?? "").trim().toLowerCase() === normalized;
+      return byName || byUrlKey;
+    });
+
+    return matched?.id ?? null;
+  }
+
+  async function inferAssigneeAgentIdFromIssueContent(input: {
+    companyId: string;
+    title: string;
+    description: string | null | undefined;
+  }) {
+    const label =
+      extractStructuredOwnerLabel(input.description) ??
+      extractStructuredOwnerLabel(input.title);
+    if (!label) return null;
+    return resolveAgentIdByOwnerLabel(input.companyId, label);
+  }
+
+  async function seedSupervisorSkeletonDocuments(input: {
+    issue: {
+      id: string;
+      identifier: string | null;
+      title: string;
+      description: string | null;
+      assigneeAgentId: string | null;
+      assigneeUserId: string | null;
+    };
+    actor: ReturnType<typeof getActorInfo>;
+  }) {
+    const { issue, actor } = input;
+    const issueSummary = summarizeIssueDescription(issue.description);
+    const issueRef = issue.identifier ?? issue.id;
+    const assigneeAgentName = issue.assigneeAgentId
+      ? (await agentsSvc.getById(issue.assigneeAgentId))?.name ?? issue.assigneeAgentId
+      : null;
+    const nextOwner = assigneeAgentName ?? (issue.assigneeUserId ? `user:${issue.assigneeUserId}` : "ChiefOfStaff");
+
+    const docs = [
+      {
+        key: "plan",
+        title: "Plan",
+        body: [
+          "# Goal",
+          "",
+          `- Issue: ${issueRef}`,
+          `- Title: ${issue.title}`,
+          "- Desired outcome: clarify this intake into an executable result.",
+          "",
+          "# Scope",
+          "",
+          "- In scope:",
+          "  - initial supervisor-owned framing",
+          "  - next owner selection",
+          "  - first execution slice",
+          "- Out of scope:",
+          "  - unspecified implementation details until clarified",
+          "",
+          "# Milestones",
+          "",
+          "- M1: create initial context and supervisor TODO breakdown",
+          "- M2: expand into a detailed plan if requirement clarity is still needed",
+          "- M3: hand off one concrete execution slice to one specialist",
+          "",
+          "# Acceptance Criteria",
+          "",
+          "- A clear next owner is named.",
+          "- The first execution slice is small enough for one focused run.",
+          "- Context, assumptions, and blockers are explicit.",
+          "",
+          "# Next Owner",
+          "",
+          `- ${nextOwner}`,
+        ].join("\n"),
+      },
+      {
+        key: "context",
+        title: "Context",
+        body: [
+          "# Current State",
+          "",
+          `- Issue: ${issueRef}`,
+          `- Title: ${issue.title}`,
+          `- Initial owner: ${nextOwner}`,
+          "",
+          "# Original Request",
+          "",
+          issueSummary,
+          "",
+          "# Known Facts",
+          "",
+          "- New issue created.",
+          "- Supervisor skeleton documents were auto-generated.",
+          "",
+          "# Assumptions",
+          "",
+          "- The request may still need planning refinement before specialist execution.",
+          "",
+          "# Open Questions",
+          "",
+          "- What is the exact deliverable?",
+          "- Which specialist should own the first execution slice?",
+          "- What constraints or deadlines are missing?",
+        ].join("\n"),
+      },
+      {
+        key: "todo",
+        title: "TODO",
+        body: [
+          "# Supervisor TODO",
+          "",
+          "- [ ] Confirm the exact outcome and success criteria",
+          `  - owner: ${nextOwner}`,
+          "  - artifact: plan",
+          "  - done when: goal, scope, and next owner are explicit",
+          "",
+          "- [ ] Update context with assumptions, blockers, and missing inputs",
+          `  - owner: ${nextOwner}`,
+          "  - artifact: context",
+          "  - done when: another specialist can start without rereading the full thread",
+          "",
+          "- [ ] Break the work into the first execution-ready slice",
+          `  - owner: ${nextOwner}`,
+          "  - artifact: todo",
+          "  - done when: one specialist has one bounded next action",
+        ].join("\n"),
+      },
+    ] as const;
+
+    for (const doc of docs) {
+      await documentsSvc.upsertIssueDocument({
+        issueId: issue.id,
+        key: doc.key,
+        title: doc.title,
+        format: "markdown",
+        body: doc.body,
+        changeSummary: "Auto-generated supervisor skeleton",
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    }
+  }
+
   async function assertCanManageIssueApprovalLinks(req: Request, res: Response, companyId: string) {
     assertCompanyAccess(req, companyId);
     if (req.actor.type === "board") return true;
@@ -752,6 +936,15 @@ export function issueRoutes(db: Db, storage: StorageService) {
   router.post("/companies/:companyId/issues", validate(createIssueSchema), async (req, res) => {
     const companyId = req.params.companyId as string;
     assertCompanyAccess(req, companyId);
+    const inferredAssigneeAgentId =
+      !req.body.assigneeAgentId && !req.body.assigneeUserId
+        ? await inferAssigneeAgentIdFromIssueContent({
+          companyId,
+          title: req.body.title,
+          description: req.body.description,
+        })
+        : null;
+
     if (req.body.assigneeAgentId || req.body.assigneeUserId) {
       await assertCanAssignTasks(req, companyId);
     }
@@ -759,6 +952,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const actor = getActorInfo(req);
     const issue = await svc.create(companyId, {
       ...req.body,
+      ...(inferredAssigneeAgentId ? { assigneeAgentId: inferredAssigneeAgentId } : {}),
       createdByAgentId: actor.agentId,
       createdByUserId: actor.actorType === "user" ? actor.actorId : null,
     });
@@ -774,6 +968,12 @@ export function issueRoutes(db: Db, storage: StorageService) {
       entityId: issue.id,
       details: { title: issue.title, identifier: issue.identifier },
     });
+
+    try {
+      await seedSupervisorSkeletonDocuments({ issue, actor });
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to seed supervisor skeleton documents");
+    }
 
     if (issue.assigneeAgentId && issue.status !== "backlog") {
       void heartbeat
@@ -1278,40 +1478,65 @@ export function issueRoutes(db: Db, storage: StorageService) {
       userId: actor.actorType === "user" ? actor.actorId : undefined,
     });
 
+    let effectiveIssue = currentIssue;
+    let handoffAssigneeChanged = false;
+    const handoffOwnerLabel = extractStructuredOwnerLabel(req.body.body);
+    const handoffOwnerAgentId =
+      actor.actorType === "agent" && actor.actorId === currentIssue.assigneeAgentId
+        ? await resolveAgentIdByOwnerLabel(currentIssue.companyId, handoffOwnerLabel)
+        : null;
+
+    if (
+      handoffOwnerAgentId &&
+      handoffOwnerAgentId !== currentIssue.assigneeAgentId
+    ) {
+      const nextStatus = currentIssue.status === "backlog" ? "todo" : currentIssue.status;
+      const reassigned = await svc.update(currentIssue.id, {
+        assigneeAgentId: handoffOwnerAgentId,
+        assigneeUserId: null,
+        status: nextStatus,
+      });
+      if (reassigned) {
+        handoffAssigneeChanged = true;
+        effectiveIssue = reassigned;
+      }
+    }
+
     await logActivity(db, {
-      companyId: currentIssue.companyId,
+      companyId: effectiveIssue.companyId,
       actorType: actor.actorType,
       actorId: actor.actorId,
       agentId: actor.agentId,
       runId: actor.runId,
       action: "issue.comment_added",
       entityType: "issue",
-      entityId: currentIssue.id,
+      entityId: effectiveIssue.id,
       details: {
         commentId: comment.id,
         bodySnippet: comment.body.slice(0, 120),
-        identifier: currentIssue.identifier,
-        issueTitle: currentIssue.title,
+        identifier: effectiveIssue.identifier,
+        issueTitle: effectiveIssue.title,
         ...(reopened ? { reopened: true, reopenedFrom: reopenFromStatus, source: "comment" } : {}),
         ...(interruptedRunId ? { interruptedRunId } : {}),
+        ...(handoffAssigneeChanged ? { handoffAssignedTo: effectiveIssue.assigneeAgentId } : {}),
       },
     });
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
     void (async () => {
       const wakeups = new Map<string, Parameters<typeof heartbeat.wakeup>[1]>();
-      const assigneeId = currentIssue.assigneeAgentId;
+      const assigneeId = effectiveIssue.assigneeAgentId;
       const actorIsAgent = actor.actorType === "agent";
       const selfComment = actorIsAgent && actor.actorId === assigneeId;
       const skipWake = selfComment || isClosed;
-      if (assigneeId && (reopened || !skipWake)) {
+      if (assigneeId && (handoffAssigneeChanged || reopened || !skipWake)) {
         if (reopened) {
           wakeups.set(assigneeId, {
             source: "automation",
             triggerDetail: "system",
             reason: "issue_reopened_via_comment",
             payload: {
-              issueId: currentIssue.id,
+              issueId: effectiveIssue.id,
               commentId: comment.id,
               reopenedFrom: reopenFromStatus,
               mutation: "comment",
@@ -1320,13 +1545,34 @@ export function issueRoutes(db: Db, storage: StorageService) {
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
             contextSnapshot: {
-              issueId: currentIssue.id,
-              taskId: currentIssue.id,
+              issueId: effectiveIssue.id,
+              taskId: effectiveIssue.id,
               commentId: comment.id,
               source: "issue.comment.reopen",
               wakeReason: "issue_reopened_via_comment",
               reopenedFrom: reopenFromStatus,
               ...(interruptedRunId ? { interruptedRunId } : {}),
+            },
+          });
+        } else if (handoffAssigneeChanged) {
+          wakeups.set(assigneeId, {
+            source: "assignment",
+            triggerDetail: "system",
+            reason: "issue_assigned",
+            payload: {
+              issueId: effectiveIssue.id,
+              commentId: comment.id,
+              mutation: "comment_handoff",
+            },
+            requestedByActorType: actor.actorType,
+            requestedByActorId: actor.actorId,
+            contextSnapshot: {
+              issueId: effectiveIssue.id,
+              taskId: effectiveIssue.id,
+              commentId: comment.id,
+              wakeCommentId: comment.id,
+              wakeReason: "issue_assigned",
+              source: "issue.comment.handoff",
             },
           });
         } else {
@@ -1335,7 +1581,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
             triggerDetail: "system",
             reason: "issue_commented",
             payload: {
-              issueId: currentIssue.id,
+              issueId: effectiveIssue.id,
               commentId: comment.id,
               mutation: "comment",
               ...(interruptedRunId ? { interruptedRunId } : {}),
@@ -1343,8 +1589,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
             requestedByActorType: actor.actorType,
             requestedByActorId: actor.actorId,
             contextSnapshot: {
-              issueId: currentIssue.id,
-              taskId: currentIssue.id,
+              issueId: effectiveIssue.id,
+              taskId: effectiveIssue.id,
               commentId: comment.id,
               source: "issue.comment",
               wakeReason: "issue_commented",
@@ -1385,7 +1631,7 @@ export function issueRoutes(db: Db, storage: StorageService) {
       for (const [agentId, wakeup] of wakeups.entries()) {
         heartbeat
           .wakeup(agentId, wakeup)
-          .catch((err) => logger.warn({ err, issueId: currentIssue.id, agentId }, "failed to wake agent on issue comment"));
+          .catch((err) => logger.warn({ err, issueId: effectiveIssue.id, agentId }, "failed to wake agent on issue comment"));
       }
     })();
 
