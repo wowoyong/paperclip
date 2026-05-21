@@ -36,6 +36,40 @@ function stripMarkdown(input: string | null | undefined): string {
     .trim();
 }
 
+function extractMarkdownSection(input: string | null | undefined, heading: string): string {
+  if (!input) return "";
+  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const pattern = new RegExp(`^###\\s+${escaped}\\s*$\\n?([\\s\\S]*?)(?=^###\\s+|\\s*$)`, "im");
+  const match = input.match(pattern);
+  return match?.[1]?.trim() ?? "";
+}
+
+function formatStructuredSummary(input: string | null | undefined): string {
+  if (!input) return "";
+  const summarySection = extractMarkdownSection(input, "summary (what this link says)");
+  const takeawaysSection = extractMarkdownSection(input, "key takeaways");
+  const actionItemsSection = extractMarkdownSection(input, "action items (what we should do)");
+
+  const blocks: string[] = [];
+
+  if (summarySection) {
+    blocks.push("### 핵심 요약");
+    blocks.push(summarySection);
+  }
+
+  if (takeawaysSection) {
+    blocks.push("### 주요 포인트");
+    blocks.push(takeawaysSection);
+  }
+
+  if (actionItemsSection) {
+    blocks.push("### 실무 적용 아이디어");
+    blocks.push(actionItemsSection);
+  }
+
+  return blocks.join("\n\n").trim();
+}
+
 function extractTodoProgress(todoBody: string | null | undefined) {
   const body = todoBody ?? "";
   const doneMatches = body.match(/^\s*[-*]\s*\[x\]\s+/gim) ?? [];
@@ -94,9 +128,10 @@ export function issueReportService(db: Db) {
       const todoDoc = reportableDocs.find((doc) => doc.key === "todo") ?? null;
       const todoProgress = extractTodoProgress(todoDoc?.body);
       const latestComment = commentsDesc[0] ?? null;
+      const latestCommentStructuredSummary = formatStructuredSummary(latestComment?.body);
       const latestCommentSummary = stripMarkdown(latestComment?.body);
       const fallbackSummary = stripMarkdown(issue.description) || firstNonEmptyLine(planDoc?.body) || firstNonEmptyLine(contextDoc?.body);
-      const summary = latestCommentSummary || fallbackSummary || "요약이 아직 없습니다.";
+      const summary = latestCommentStructuredSummary || latestCommentSummary || fallbackSummary || "요약이 아직 없습니다.";
       const activeRun = "activeRun" in issue ? (issue as { activeRun?: { id: string; status: string } | null }).activeRun ?? null : null;
       const statusSummary = buildStatusSummary({
         status: issue.status,
