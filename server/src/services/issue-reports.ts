@@ -47,6 +47,7 @@ function extractMarkdownSection(input: string | null | undefined, heading: strin
 function formatStructuredSummary(input: string | null | undefined): string {
   if (!input) return "";
   const summarySection = extractMarkdownSection(input, "summary (what this link says)");
+  const topicsSection = extractMarkdownSection(input, "topic-by-topic summary");
   const takeawaysSection = extractMarkdownSection(input, "key takeaways");
   const actionItemsSection = extractMarkdownSection(input, "action items (what we should do)");
 
@@ -55,6 +56,11 @@ function formatStructuredSummary(input: string | null | undefined): string {
   if (summarySection) {
     blocks.push("### 핵심 요약");
     blocks.push(summarySection);
+  }
+
+  if (topicsSection) {
+    blocks.push("### 주요 주제별 요약");
+    blocks.push(topicsSection);
   }
 
   if (takeawaysSection) {

@@ -38,11 +38,12 @@ function extractSummaryFromReport(reportBody: string | null | undefined): string
   if (!reportBody) return "요약이 아직 없습니다.";
   const sectionMatch = reportBody.match(/## 한눈에 보기\s+([\s\S]*?)(?:\n## |\s*$)/);
   const raw = sectionMatch?.[1] ?? reportBody;
-  const line = raw
+  const lines = raw
     .split("\n")
     .map((entry) => entry.trim())
-    .find((entry) => entry.length > 0 && !entry.startsWith("#") && !entry.startsWith("- 제목:"));
-  return line ?? "요약이 아직 없습니다.";
+    .filter((entry) => entry.length > 0 && !entry.startsWith("- 제목:"));
+  if (lines.length === 0) return "요약이 아직 없습니다.";
+  return lines.slice(0, 12).join("\n");
 }
 
 function statusLabel(status: string): string {

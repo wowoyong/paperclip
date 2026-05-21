@@ -1,7 +1,7 @@
 import { useEffect, useMemo } from "react";
 import { Link, useSearchParams } from "@/lib/router";
 import { useQuery } from "@tanstack/react-query";
-import { CalendarDays, FileText, Filter, Loader2 } from "lucide-react";
+import { CalendarDays, FileText, Loader2 } from "lucide-react";
 import { issuesApi } from "../api/issues";
 import { agentsApi } from "../api/agents";
 import { useCompany } from "../context/CompanyContext";
@@ -9,7 +9,6 @@ import { useBreadcrumbs } from "../context/BreadcrumbContext";
 import { queryKeys } from "../lib/queryKeys";
 import { EmptyState } from "../components/EmptyState";
 import { MarkdownBody } from "../components/MarkdownBody";
-import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
 import type { Issue, IssueComment, IssueDocument } from "@paperclipai/shared";
 
@@ -34,6 +33,16 @@ function formatDateTime(value: Date | string | null | undefined): string {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatHistoryBucketLabel(value: string): string {
+  const today = toDateInputValue(new Date());
+  const yesterdayDate = new Date();
+  yesterdayDate.setDate(yesterdayDate.getDate() - 1);
+  const yesterday = toDateInputValue(yesterdayDate);
+  if (value === today) return "오늘";
+  if (value === yesterday) return "어제";
+  return value;
 }
 
 function statusTone(status: string) {
@@ -75,7 +84,6 @@ export function IssueReports() {
   const [searchParams, setSearchParams] = useSearchParams();
 
   const dateFilter = searchParams.get("date") ?? "";
-  const topicFilter = searchParams.get("q") ?? "";
   const selectedIssueId = searchParams.get("issue") ?? "";
 
   useEffect(() => {
@@ -101,7 +109,6 @@ export function IssueReports() {
     queryFn: () =>
       issuesApi.list(effectiveCompanyId!, {
         status: "backlog,todo,in_progress,in_review,blocked,done,cancelled",
-        q: topicFilter || undefined,
       }),
     enabled: !!effectiveCompanyId,
   });
@@ -118,6 +125,25 @@ export function IssueReports() {
       return true;
     });
   }, [issues, dateFilter]);
+
+  const groupedIssues = useMemo(() => {
+    const sorted = [...filteredIssues].sort((a, b) => {
+      const aTime = new Date(a.updatedAt).getTime();
+      const bTime = new Date(b.updatedAt).getTime();
+      return bTime - aTime;
+    });
+    const groups: Array<{ key: string; label: string; items: Issue[] }> = [];
+    for (const issue of sorted) {
+      const key = toDateInputValue(issue.createdAt) || "unknown";
+      const lastGroup = groups[groups.length - 1];
+      if (!lastGroup || lastGroup.key !== key) {
+        groups.push({ key, label: formatHistoryBucketLabel(key), items: [issue] });
+      } else {
+        lastGroup.items.push(issue);
+      }
+    }
+    return groups;
+  }, [filteredIssues]);
 
   const statusCounts = useMemo(() => {
     return filteredIssues.reduce<Record<string, number>>((acc, issue) => {
@@ -192,41 +218,21 @@ export function IssueReports() {
       <div className="flex flex-col gap-3 rounded-lg border border-border bg-card p-4 md:flex-row md:items-end">
         <div className="flex-1">
           <p className="text-sm font-medium">완료/진행 리포트</p>
-          <p className="mt-1 text-xs text-muted-foreground">
-            일자와 테스크 주제로 필터링한 뒤, 각 이슈가 지금 어떻게 처리되고 있는지 리포트 문서와 최근 코멘트 기준으로 확인할 수 있습니다.
-          </p>
+          <p className="mt-1 text-xs text-muted-foreground">날짜별 히스토리처럼 요청 이력을 훑어보면서 각 이슈의 현재 상태와 리포트를 확인할 수 있습니다.</p>
         </div>
-        <div className="grid gap-3 md:grid-cols-2">
+        <div className="grid gap-3 md:grid-cols-1">
           <label className="text-xs text-muted-foreground">
             요청 일자
             <div className="mt-1 relative">
               <CalendarDays className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
+              <input
+                className="flex h-10 w-full rounded-md border border-input bg-background pl-9 pr-3 py-2 text-sm ring-offset-background file:border-0 file:bg-transparent file:text-sm file:font-medium placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50"
                 type="date"
                 value={dateFilter}
                 onChange={(event) => {
                   const next = new URLSearchParams(searchParams);
                   if (event.target.value) next.set("date", event.target.value);
                   else next.delete("date");
-                  setSearchParams(next, { replace: true });
-                }}
-              />
-            </div>
-          </label>
-          <label className="text-xs text-muted-foreground">
-            테스크 주제
-            <div className="mt-1 relative">
-              <Filter className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="예: 유튜브 요약, 가격 비교, 로컬 자동화"
-                value={topicFilter}
-                onChange={(event) => {
-                  const next = new URLSearchParams(searchParams);
-                  const value = event.target.value.trimStart();
-                  if (value) next.set("q", value);
-                  else next.delete("q");
                   setSearchParams(next, { replace: true });
                 }}
               />
@@ -257,29 +263,36 @@ export function IssueReports() {
             <p className="mt-1 text-xs text-muted-foreground">{filteredIssues.length}건</p>
           </div>
           <div className="max-h-[70vh] overflow-y-auto">
-            {filteredIssues.length === 0 ? (
+            {groupedIssues.length === 0 ? (
               <div className="px-4 py-6 text-sm text-muted-foreground">조건에 맞는 이슈가 없습니다.</div>
             ) : (
-              filteredIssues.map((issue) => (
-                <button
-                  key={issue.id}
-                  type="button"
-                  onClick={() => {
-                    const next = new URLSearchParams(searchParams);
-                    next.set("issue", issue.id);
-                    setSearchParams(next, { replace: true });
-                  }}
-                  className={`w-full border-b border-border px-4 py-3 text-left transition-colors hover:bg-accent/40 ${selectedIssue?.id === issue.id ? "bg-accent/40" : ""}`}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium">{issue.identifier ?? issue.id}</span>
-                    <Badge variant="outline" className={statusTone(issue.status)}>
-                      {issue.status}
-                    </Badge>
+              groupedIssues.map((group) => (
+                <div key={group.key} className="border-b border-border last:border-b-0">
+                  <div className="sticky top-0 z-[1] bg-card/95 px-4 py-2 text-xs font-medium text-muted-foreground backdrop-blur">
+                    {group.label}
                   </div>
-                  <p className="mt-1 line-clamp-2 text-sm text-foreground">{issue.title}</p>
-                  <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(issue.updatedAt)}</p>
-                </button>
+                  {group.items.map((issue) => (
+                    <button
+                      key={issue.id}
+                      type="button"
+                      onClick={() => {
+                        const next = new URLSearchParams(searchParams);
+                        next.set("issue", issue.id);
+                        setSearchParams(next, { replace: true });
+                      }}
+                      className={`w-full border-t border-border px-4 py-3 text-left transition-colors hover:bg-accent/40 ${selectedIssue?.id === issue.id ? "bg-accent/40" : ""}`}
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="truncate text-sm font-medium">{issue.identifier ?? issue.id}</span>
+                        <Badge variant="outline" className={statusTone(issue.status)}>
+                          {issue.status}
+                        </Badge>
+                      </div>
+                      <p className="mt-1 line-clamp-2 text-sm text-foreground">{issue.title}</p>
+                      <p className="mt-1 text-xs text-muted-foreground">{formatDateTime(issue.updatedAt)}</p>
+                    </button>
+                  ))}
+                </div>
               ))
             )}
           </div>
