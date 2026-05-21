@@ -190,16 +190,23 @@ function OnboardingRoutePage() {
       ? "Create another operator company"
       : "Create your first operator company";
   const description = matchedCompany
-    ? "Run onboarding again to add another specialist and starter task for this company."
+    ? "Add another specialist lane, wire up a starter task, and extend this company’s operator workflow."
     : companies.length > 0
-      ? "Run onboarding again to create another operator company and seed its first specialist."
-      : "Get started by creating a company, a CEO, and the first specialist team.";
+      ? "Spin up another operator company with its own CEO, specialist team, and kickoff queue."
+      : "Create a company, bootstrap a CEO, and seed the first specialist workflow from day one.";
 
   return (
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">{title}</h1>
         <p className="mt-2 text-sm text-muted-foreground">{description}</p>
+        <div className="mt-4 rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1.5">
+          <p className="font-medium text-foreground">What you get</p>
+          <p>- CEO + specialist operator team</p>
+          <p>- kickoff issue and execution queue</p>
+          <p>- Codex-first local execution</p>
+          <p>- durable repo / wiki / mac-wiki context flow</p>
+        </div>
         <div className="mt-4">
           <Button
             onClick={() =>
@@ -277,8 +284,13 @@ function NoCompaniesStartPage() {
       <div className="rounded-lg border border-border bg-card p-6">
         <h1 className="text-xl font-semibold">Create your first operator company</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Get started by creating a company, a CEO, and the first specialist team.
+          Start with a CEO, a Codex-first specialist workflow, and a kickoff issue that actually launches the operator OS.
         </p>
+        <div className="mt-4 rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1.5">
+          <p>- Telegram/OpenClaw intake can route into specialist agents</p>
+          <p>- agents leave handoffs and durable docs instead of chat-only output</p>
+          <p>- knowledge can flow into repo docs, project wiki, and mac-wiki</p>
+        </div>
         <div className="mt-4">
           <Button onClick={() => openOnboarding()}>New Company</Button>
         </div>

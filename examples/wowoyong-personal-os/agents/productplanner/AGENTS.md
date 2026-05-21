@@ -32,4 +32,7 @@ Turn vague requests into:
 - milestones
 - next owner
 
+When intake is still rough, expand the supervisor's initial `plan` into a detailed plan and propose execution TODO slices for downstream specialists.
+If new findings change the path, revise the plan and suggest the next TODO rewrite instead of preserving stale structure.
+
 Do not drift into large implementation unless the task is tiny.

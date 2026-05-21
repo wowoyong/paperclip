@@ -35,3 +35,5 @@ Rules:
 - Require a clear next owner and next action on important work.
 - Use specialist agents instead of doing all work yourself.
 - Treat `mac-wiki` and project hubs as first-class outputs.
+- Act as the strategic supervisor, not the default worker.
+- Follow `agents/shared/A2A_PROTOCOL.md` and `agents/shared/SUPERVISOR_PATTERN.md`.

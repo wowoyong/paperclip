@@ -55,6 +55,13 @@ import {
 } from "lucide-react";
 
 type Step = 1 | 2 | 3 | 4;
+type OnboardingStatus = "not_started" | "in_progress" | "completed" | "skipped";
+type FailedAction =
+  | "create_company"
+  | "create_agent"
+  | "create_issue"
+  | "adapter_env_test"
+  | "unset_anthropic_api_key";
 type AdapterType =
   | "claude_local"
   | "codex_local"
@@ -80,6 +87,71 @@ Then set up your first specialist team in this order:
 7. CodexCoder
 
 Your first deliverable is not just a working CEO agent. Create the first company roadmap, define the initial specialist roles, and create the first kickoff issue so the company can actually start operating.`;
+const DEFAULT_TASK_TITLE = "Bootstrap your operator OS CEO";
+const ONBOARDING_PROGRESS_STORAGE_KEY = "paperclip:onboarding-progress:v1";
+
+type OnboardingProgressSnapshot = {
+  status: OnboardingStatus;
+  step: Step;
+  createdCompanyId: string | null;
+  createdCompanyPrefix: string | null;
+  createdAgentId: string | null;
+  createdIssueRef: string | null;
+};
+
+function readOnboardingProgress(): OnboardingProgressSnapshot | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = window.localStorage.getItem(ONBOARDING_PROGRESS_STORAGE_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw) as Partial<OnboardingProgressSnapshot>;
+    if (
+      !parsed ||
+      (parsed.status !== "not_started" &&
+        parsed.status !== "in_progress" &&
+        parsed.status !== "completed" &&
+        parsed.status !== "skipped")
+    ) {
+      return null;
+    }
+    const step = parsed.step;
+    if (step !== 1 && step !== 2 && step !== 3 && step !== 4) return null;
+    return {
+      status: parsed.status,
+      step,
+      createdCompanyId: parsed.createdCompanyId ?? null,
+      createdCompanyPrefix: parsed.createdCompanyPrefix ?? null,
+      createdAgentId: parsed.createdAgentId ?? null,
+      createdIssueRef: parsed.createdIssueRef ?? null
+    };
+  } catch {
+    return null;
+  }
+}
+
+function writeOnboardingProgress(snapshot: OnboardingProgressSnapshot): void {
+  if (typeof window === "undefined") return;
+  window.localStorage.setItem(
+    ONBOARDING_PROGRESS_STORAGE_KEY,
+    JSON.stringify(snapshot)
+  );
+}
+
+function trackOnboardingEvent(
+  eventName:
+    | "onboarding_viewed"
+    | "onboarding_step_completed"
+    | "onboarding_skipped"
+    | "onboarding_completed",
+  payload: Record<string, unknown>
+): void {
+  if (typeof window === "undefined") return;
+  window.dispatchEvent(
+    new CustomEvent("paperclip:onboarding-analytics", {
+      detail: { eventName, payload }
+    })
+  );
+}
 
 export function OnboardingWizard() {
   const { onboardingOpen, onboardingOptions, closeOnboarding } = useDialog();
@@ -89,6 +161,7 @@ export function OnboardingWizard() {
   const location = useLocation();
   const { companyPrefix } = useParams<{ companyPrefix?: string }>();
   const [routeDismissed, setRouteDismissed] = useState(false);
+  const completedRef = useRef(false);
 
   const routeOnboardingOptions =
     companyPrefix && companiesLoading
@@ -110,8 +183,12 @@ export function OnboardingWizard() {
   const [step, setStep] = useState<Step>(initialStep);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [lastFailedAction, setLastFailedAction] = useState<FailedAction | null>(
+    null
+  );
   const [modelOpen, setModelOpen] = useState(false);
   const [modelSearch, setModelSearch] = useState("");
+  const [showValidationErrors, setShowValidationErrors] = useState(false);
 
   // Step 1
   const [companyName, setCompanyName] = useState("");
@@ -135,7 +212,7 @@ export function OnboardingWizard() {
   const [showMoreAdapters, setShowMoreAdapters] = useState(false);
 
   // Step 3
-  const [taskTitle, setTaskTitle] = useState("Bootstrap your operator OS CEO");
+  const [taskTitle, setTaskTitle] = useState(DEFAULT_TASK_TITLE);
   const [taskDescription, setTaskDescription] = useState(
     DEFAULT_TASK_DESCRIPTION
   );
@@ -158,20 +235,78 @@ export function OnboardingWizard() {
   >(null);
   const [createdAgentId, setCreatedAgentId] = useState<string | null>(null);
   const [createdIssueRef, setCreatedIssueRef] = useState<string | null>(null);
+  const companyNameError =
+    showValidationErrors && !companyName.trim()
+      ? "회사명을 입력해야 다음 단계로 이동할 수 있습니다."
+      : null;
+  const agentNameError =
+    showValidationErrors && !agentName.trim()
+      ? "에이전트 이름을 입력해야 다음 단계로 이동할 수 있습니다."
+      : null;
+  const opencodeModelError =
+    showValidationErrors &&
+    step === 2 &&
+    adapterType === "opencode_local" &&
+    !model.trim()
+      ? "OpenCode는 모델 선택이 필수입니다."
+      : null;
+  const taskTitleError =
+    showValidationErrors && !taskTitle.trim()
+      ? "작업 제목을 입력해야 다음 단계로 이동할 수 있습니다."
+      : null;
+  const isStep1Valid = Boolean(companyName.trim());
+  const isStep2Valid =
+    Boolean(agentName.trim()) &&
+    (adapterType !== "opencode_local" || Boolean(model.trim()));
+  const isStep3Valid = Boolean(taskTitle.trim());
+  const isBusy = loading || adapterEnvLoading || unsetAnthropicLoading;
 
   useEffect(() => {
     setRouteDismissed(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    setShowValidationErrors(false);
+  }, [step]);
 
   // Sync step and company when onboarding opens with options.
   // Keep this independent from company-list refreshes so Step 1 completion
   // doesn't get reset after creating a company.
   useEffect(() => {
     if (!effectiveOnboardingOpen) return;
+    const hasExplicitRouteOptions =
+      effectiveOnboardingOptions.initialStep !== undefined ||
+      effectiveOnboardingOptions.companyId !== undefined;
+    const snapshot = readOnboardingProgress();
+    const shouldResume =
+      !hasExplicitRouteOptions &&
+      snapshot?.status === "in_progress" &&
+      snapshot.step >= 1;
+
+    if (shouldResume && snapshot) {
+      setStep(snapshot.step);
+      setCreatedCompanyId(snapshot.createdCompanyId);
+      setCreatedCompanyPrefix(snapshot.createdCompanyPrefix);
+      setCreatedAgentId(snapshot.createdAgentId);
+      setCreatedIssueRef(snapshot.createdIssueRef);
+      trackOnboardingEvent("onboarding_viewed", {
+        step: snapshot.step,
+        reentry: true
+      });
+      return;
+    }
+
     const cId = effectiveOnboardingOptions.companyId ?? null;
-    setStep(effectiveOnboardingOptions.initialStep ?? 1);
+    const nextStep = effectiveOnboardingOptions.initialStep ?? 1;
+    setStep(nextStep);
     setCreatedCompanyId(cId);
     setCreatedCompanyPrefix(null);
+    setCreatedAgentId(null);
+    setCreatedIssueRef(null);
+    trackOnboardingEvent("onboarding_viewed", {
+      step: nextStep,
+      reentry: false
+    });
   }, [
     effectiveOnboardingOpen,
     effectiveOnboardingOptions.companyId,
@@ -272,14 +407,36 @@ export function OnboardingWizard() {
       }));
   }, [filteredModels, adapterType]);
 
+  function persistProgress(
+    status: OnboardingStatus,
+    targetStep: Step,
+    overrides?: Partial<
+      Pick<
+        OnboardingProgressSnapshot,
+        "createdCompanyId" | "createdCompanyPrefix" | "createdAgentId" | "createdIssueRef"
+      >
+    >
+  ) {
+    writeOnboardingProgress({
+      status,
+      step: targetStep,
+      createdCompanyId: overrides?.createdCompanyId ?? createdCompanyId,
+      createdCompanyPrefix:
+        overrides?.createdCompanyPrefix ?? createdCompanyPrefix,
+      createdAgentId: overrides?.createdAgentId ?? createdAgentId,
+      createdIssueRef: overrides?.createdIssueRef ?? createdIssueRef
+    });
+  }
+
   function reset() {
     setStep(1);
     setLoading(false);
     setError(null);
+    setLastFailedAction(null);
     setCompanyName("");
     setCompanyGoal("");
     setAgentName("CEO");
-    setAdapterType("claude_local");
+    setAdapterType("codex_local");
     setCwd("");
     setModel("");
     setCommand("");
@@ -290,15 +447,23 @@ export function OnboardingWizard() {
     setAdapterEnvLoading(false);
     setForceUnsetAnthropicApiKey(false);
     setUnsetAnthropicLoading(false);
-    setTaskTitle("Create your CEO HEARTBEAT.md");
+    setTaskTitle(DEFAULT_TASK_TITLE);
     setTaskDescription(DEFAULT_TASK_DESCRIPTION);
+    setShowValidationErrors(false);
     setCreatedCompanyId(null);
     setCreatedCompanyPrefix(null);
     setCreatedAgentId(null);
     setCreatedIssueRef(null);
+    completedRef.current = false;
   }
 
   function handleClose() {
+    if (!completedRef.current) {
+      persistProgress("skipped", step);
+      trackOnboardingEvent("onboarding_skipped", {
+        step
+      });
+    }
     reset();
     closeOnboarding();
   }
@@ -350,6 +515,7 @@ export function OnboardingWizard() {
     }
     setAdapterEnvLoading(true);
     setAdapterEnvError(null);
+    setLastFailedAction(null);
     try {
       const result = await agentsApi.testEnvironment(
         createdCompanyId,
@@ -361,6 +527,7 @@ export function OnboardingWizard() {
       setAdapterEnvResult(result);
       return result;
     } catch (err) {
+      setLastFailedAction("adapter_env_test");
       setAdapterEnvError(
         err instanceof Error ? err.message : "Adapter environment test failed"
       );
@@ -371,10 +538,16 @@ export function OnboardingWizard() {
   }
 
   async function handleStep1Next() {
+    if (!isStep1Valid) {
+      setShowValidationErrors(true);
+      return;
+    }
     setLoading(true);
     setError(null);
+    setLastFailedAction(null);
     try {
-      const company = await companiesApi.create({ name: companyName.trim() });
+      const companyPayload = { name: companyName.trim() };
+      const company = await companiesApi.create(companyPayload);
       setCreatedCompanyId(company.id);
       setCreatedCompanyPrefix(company.issuePrefix);
       setSelectedCompanyId(company.id);
@@ -396,7 +569,13 @@ export function OnboardingWizard() {
       }
 
       setStep(2);
+      persistProgress("in_progress", 2, {
+        createdCompanyId: company.id,
+        createdCompanyPrefix: company.issuePrefix
+      });
+      trackOnboardingEvent("onboarding_step_completed", { step: 1 });
     } catch (err) {
+      setLastFailedAction("create_company");
       setError(err instanceof Error ? err.message : "Failed to create company");
     } finally {
       setLoading(false);
@@ -404,9 +583,14 @@ export function OnboardingWizard() {
   }
 
   async function handleStep2Next() {
+    if (!isStep2Valid) {
+      setShowValidationErrors(true);
+      return;
+    }
     if (!createdCompanyId) return;
     setLoading(true);
     setError(null);
+    setLastFailedAction(null);
     try {
       if (adapterType === "opencode_local") {
         const selectedModelId = model.trim();
@@ -446,7 +630,7 @@ export function OnboardingWizard() {
         if (!result) return;
       }
 
-      const agent = await agentsApi.create(createdCompanyId, {
+      const agentPayload = {
         name: agentName.trim(),
         role: "ceo",
         adapterType,
@@ -460,13 +644,19 @@ export function OnboardingWizard() {
             maxConcurrentRuns: 1
           }
         }
-      });
+      };
+      const agent = await agentsApi.create(createdCompanyId, agentPayload);
       setCreatedAgentId(agent.id);
       queryClient.invalidateQueries({
         queryKey: queryKeys.agents.list(createdCompanyId)
       });
       setStep(3);
+      persistProgress("in_progress", 3, {
+        createdAgentId: agent.id
+      });
+      trackOnboardingEvent("onboarding_step_completed", { step: 2 });
     } catch (err) {
+      setLastFailedAction("create_agent");
       setError(err instanceof Error ? err.message : "Failed to create agent");
     } finally {
       setLoading(false);
@@ -477,6 +667,7 @@ export function OnboardingWizard() {
     if (!createdCompanyId || unsetAnthropicLoading) return;
     setUnsetAnthropicLoading(true);
     setError(null);
+    setLastFailedAction(null);
     setAdapterEnvError(null);
     setForceUnsetAnthropicApiKey(true);
 
@@ -512,6 +703,7 @@ export function OnboardingWizard() {
         );
       }
     } catch (err) {
+      setLastFailedAction("unset_anthropic_api_key");
       setError(
         err instanceof Error
           ? err.message
@@ -523,26 +715,35 @@ export function OnboardingWizard() {
   }
 
   async function handleStep3Next() {
+    if (!isStep3Valid) {
+      setShowValidationErrors(true);
+      return;
+    }
     if (!createdCompanyId || !createdAgentId) return;
     setError(null);
+    setLastFailedAction(null);
     setStep(4);
+    persistProgress("in_progress", 4);
+    trackOnboardingEvent("onboarding_step_completed", { step: 3 });
   }
 
   async function handleLaunch() {
     if (!createdCompanyId || !createdAgentId) return;
     setLoading(true);
     setError(null);
+    setLastFailedAction(null);
     try {
       let issueRef = createdIssueRef;
       if (!issueRef) {
-        const issue = await issuesApi.create(createdCompanyId, {
+        const issuePayload = {
           title: taskTitle.trim(),
           ...(taskDescription.trim()
             ? { description: taskDescription.trim() }
             : {}),
           assigneeAgentId: createdAgentId,
           status: "todo"
-        });
+        };
+        const issue = await issuesApi.create(createdCompanyId, issuePayload);
         issueRef = issue.identifier ?? issue.id;
         setCreatedIssueRef(issueRef);
         queryClient.invalidateQueries({
@@ -551,6 +752,14 @@ export function OnboardingWizard() {
       }
 
       setSelectedCompanyId(createdCompanyId);
+      completedRef.current = true;
+      persistProgress("completed", 4, {
+        createdIssueRef: issueRef ?? null
+      });
+      trackOnboardingEvent("onboarding_completed", {
+        step: 4,
+        issueRef
+      });
       reset();
       closeOnboarding();
       navigate(
@@ -559,6 +768,7 @@ export function OnboardingWizard() {
           : `/issues/${issueRef}`
       );
     } catch (err) {
+      setLastFailedAction("create_issue");
       setError(err instanceof Error ? err.message : "Failed to create task");
     } finally {
       setLoading(false);
@@ -573,6 +783,27 @@ export function OnboardingWizard() {
       else if (step === 3 && taskTitle.trim()) handleStep3Next();
       else if (step === 4) handleLaunch();
     }
+  }
+
+  function handleRetryLastAction() {
+    if (!lastFailedAction || isBusy) return;
+    if (lastFailedAction === "create_company") {
+      void handleStep1Next();
+      return;
+    }
+    if (lastFailedAction === "create_agent") {
+      void handleStep2Next();
+      return;
+    }
+    if (lastFailedAction === "create_issue") {
+      void handleLaunch();
+      return;
+    }
+    if (lastFailedAction === "adapter_env_test") {
+      void runAdapterEnvironmentTest();
+      return;
+    }
+    void handleUnsetAnthropicApiKey();
   }
 
   if (!effectiveOnboardingOpen) return null;
@@ -611,6 +842,10 @@ export function OnboardingWizard() {
           >
             <div className="w-full max-w-md mx-auto my-auto px-8 py-12 shrink-0">
               {/* Progress tabs */}
+              <div className="mb-3 flex items-center justify-between text-xs text-muted-foreground">
+                <span>단계 진행</span>
+                <span>{step}/4</span>
+              </div>
               <div className="flex items-center gap-0 mb-8 border-b border-border">
                 {(
                   [
@@ -647,9 +882,16 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">회사 이름 지정</h3>
                       <p className="text-xs text-muted-foreground">
-                        에이전트가 일할 조직입니다.
+                        텔레그램 지시, specialist 라우팅, 지식 축적이 돌아갈 operator company를 만듭니다.
                       </p>
                     </div>
+                  </div>
+                  <div className="rounded-md border border-border bg-muted/20 p-3 text-xs text-muted-foreground space-y-1.5">
+                    <p className="font-medium text-foreground">이 온보딩이 만드는 기본 구조</p>
+                    <p>- CEO + specialist team</p>
+                    <p>- 첫 kickoff issue</p>
+                    <p>- Codex 중심 실행 경로</p>
+                    <p>- repo / wiki / mac-wiki 운영 루프</p>
                   </div>
                   <div className="mt-3 group">
                     <label
@@ -669,6 +911,11 @@ export function OnboardingWizard() {
                       onChange={(e) => setCompanyName(e.target.value)}
                       autoFocus
                     />
+                    {companyNameError && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {companyNameError}
+                      </p>
+                    )}
                   </div>
                   <div className="group">
                     <label
@@ -700,7 +947,7 @@ export function OnboardingWizard() {
                     <div>
                       <h3 className="font-medium">첫 에이전트 만들기</h3>
                       <p className="text-xs text-muted-foreground">
-                        에이전트가 작업을 실행하는 방법을 선택하세요.
+                        기본 워커는 `codex_local`을 권장합니다. Claude/Gemini/OpenClaw는 보조 경로로 추가할 수 있습니다.
                       </p>
                     </div>
                   </div>
@@ -715,6 +962,11 @@ export function OnboardingWizard() {
                       onChange={(e) => setAgentName(e.target.value)}
                       autoFocus
                     />
+                    {agentNameError && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {agentNameError}
+                      </p>
+                    )}
                   </div>
 
                   {/* Adapter type radio cards */}
@@ -986,6 +1238,11 @@ export function OnboardingWizard() {
                             )}
                           </PopoverContent>
                         </Popover>
+                        {opencodeModelError && (
+                          <p className="mt-1 text-xs text-destructive">
+                            {opencodeModelError}
+                          </p>
+                        )}
                       </div>
                     </div>
                   )}
@@ -1001,13 +1258,13 @@ export function OnboardingWizard() {
                             어댑터 CLI에 hello 응답을 요청하는 실시간 프로브를 실행합니다.
                           </p>
                         </div>
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          className="h-7 px-2.5 text-xs"
-                          disabled={adapterEnvLoading}
-                          onClick={() => void runAdapterEnvironmentTest()}
-                        >
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        className="h-7 px-2.5 text-xs"
+                        disabled={isBusy}
+                        onClick={() => void runAdapterEnvironmentTest()}
+                      >
                           {adapterEnvLoading ? "테스트 중..." : "지금 테스트"}
                         </Button>
                       </div>
@@ -1163,9 +1420,9 @@ export function OnboardingWizard() {
                       <ListTodo className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">에이전트에게 할 일을 주세요</h3>
+                      <h3 className="font-medium">첫 운영 태스크를 심기</h3>
                       <p className="text-xs text-muted-foreground">
-                        버그 수정, 리서치 질문, 스크립트 작성 등 작은 작업부터 시작하세요.
+                        이 첫 이슈가 CEO를 깨우고 specialist team, roadmap, handoff 규칙을 실제로 움직이게 합니다.
                       </p>
                     </div>
                   </div>
@@ -1180,6 +1437,11 @@ export function OnboardingWizard() {
                       onChange={(e) => setTaskTitle(e.target.value)}
                       autoFocus
                     />
+                    {taskTitleError && (
+                      <p className="mt-1 text-xs text-destructive">
+                        {taskTitleError}
+                      </p>
+                    )}
                   </div>
                   <div>
                     <label className="text-xs text-muted-foreground mb-1 block">
@@ -1203,10 +1465,9 @@ export function OnboardingWizard() {
                       <Rocket className="h-5 w-5 text-muted-foreground" />
                     </div>
                     <div>
-                      <h3 className="font-medium">시작 준비 완료</h3>
+                      <h3 className="font-medium">Operator company ready</h3>
                       <p className="text-xs text-muted-foreground">
-                        모든 설정이 완료되었습니다. 시작하면 초기 작업을 생성하고,
-                        에이전트를 깨우고, 이슈를 엽니다.
+                        시작하면 kickoff issue를 만들고 CEO heartbeat를 깨운 뒤, operator OS가 첫 specialist workflow를 부트스트랩합니다.
                       </p>
                     </div>
                   </div>
@@ -1251,6 +1512,19 @@ export function OnboardingWizard() {
               {error && (
                 <div className="mt-3">
                   <p className="text-xs text-destructive">{error}</p>
+                  {lastFailedAction && (
+                    <div className="mt-2">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        className="h-7 px-2.5 text-xs"
+                        disabled={isBusy}
+                        onClick={handleRetryLastAction}
+                      >
+                        {isBusy ? "재시도 준비 중..." : "마지막 작업 재시도"}
+                      </Button>
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -1273,8 +1547,11 @@ export function OnboardingWizard() {
                   {step === 1 && (
                     <Button
                       size="sm"
-                      disabled={!companyName.trim() || loading}
-                      onClick={handleStep1Next}
+                      disabled={!isStep1Valid || isBusy}
+                      onClick={() => {
+                        setShowValidationErrors(true);
+                        void handleStep1Next();
+                      }}
                     >
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
@@ -1287,10 +1564,11 @@ export function OnboardingWizard() {
                   {step === 2 && (
                     <Button
                       size="sm"
-                      disabled={
-                        !agentName.trim() || loading || adapterEnvLoading
-                      }
-                      onClick={handleStep2Next}
+                      disabled={!isStep2Valid || isBusy}
+                      onClick={() => {
+                        setShowValidationErrors(true);
+                        void handleStep2Next();
+                      }}
                     >
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
@@ -1303,8 +1581,11 @@ export function OnboardingWizard() {
                   {step === 3 && (
                     <Button
                       size="sm"
-                      disabled={!taskTitle.trim() || loading}
-                      onClick={handleStep3Next}
+                      disabled={!isStep3Valid || isBusy}
+                      onClick={() => {
+                        setShowValidationErrors(true);
+                        void handleStep3Next();
+                      }}
                     >
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
@@ -1315,13 +1596,13 @@ export function OnboardingWizard() {
                     </Button>
                   )}
                   {step === 4 && (
-                    <Button size="sm" disabled={loading} onClick={handleLaunch}>
+                    <Button size="sm" disabled={isBusy} onClick={handleLaunch}>
                       {loading ? (
                         <Loader2 className="h-3.5 w-3.5 mr-1 animate-spin" />
                       ) : (
                         <ArrowRight className="h-3.5 w-3.5 mr-1" />
                       )}
-                      {loading ? "생성 중..." : "생성 및 이슈 열기"}
+                      {loading ? "생성 중..." : "Launch operator OS"}
                     </Button>
                   )}
                 </div>

@@ -28,6 +28,8 @@
         "model": "gpt-5.3-codex",
         "graceSec": 20,
         "timeoutSec": 1800,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are operating inside the supervisor pattern. Check the latest issue documents in this order: context, plan, todo. If the task is strategic, keep the response decision-oriented and explicitly name the next owner.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -56,7 +58,10 @@
         "model": "gpt-5.3-codex",
         "search": true,
         "graceSec": 20,
-        "timeoutSec": 1800,
+        "timeoutSec": 900,
+        "idleTimeoutSec": 240,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "Act as the operational supervisor. Refresh the issue documents before acting. Update context, then plan, then todo when the situation changes. Leave bounded next-owner handoffs.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -84,7 +89,10 @@
         "model": "gpt-5.3-codex",
         "search": true,
         "graceSec": 20,
-        "timeoutSec": 1800,
+        "timeoutSec": 900,
+        "idleTimeoutSec": 240,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are elaborating plans under supervisor oversight. Use context + plan as the source of truth. Expand detail only as needed for the next bounded execution slice.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -92,6 +100,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -112,7 +125,10 @@
         "model": "gpt-5.3-codex",
         "search": true,
         "graceSec": 20,
-        "timeoutSec": 1800,
+        "timeoutSec": 900,
+        "idleTimeoutSec": 240,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are an evidence-first subagent. Use the existing context, then gather sources, and return a dated source pack. Do not broaden scope without a supervisor replan.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -120,6 +136,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -140,7 +161,10 @@
         "model": "gpt-5.3-codex",
         "search": true,
         "graceSec": 20,
-        "timeoutSec": 1800,
+        "timeoutSec": 900,
+        "idleTimeoutSec": 240,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are a recommendation-oriented research subagent. Use current context and produce comparison/recommendation output. Escalate ambiguity back via replan instead of silently widening the task.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -148,6 +172,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -168,6 +197,8 @@
         "model": "gpt-5.3-codex",
         "graceSec": 20,
         "timeoutSec": 1800,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are a design subagent. Treat the current plan/context/todo as canonical. Produce implementation-ready UX/UI artifacts and raise replan requests when product constraints conflict.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -175,6 +206,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -195,6 +231,8 @@
         "model": "gpt-5.3-codex",
         "graceSec": 20,
         "timeoutSec": 1800,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are a frontend execution subagent. Read context/plan/todo first, implement only the bounded slice, and hand off with concrete artifact updates.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -202,6 +240,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -222,6 +265,8 @@
         "model": "gpt-5.3-codex",
         "graceSec": 20,
         "timeoutSec": 1800,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are a backend execution subagent. Read context/plan/todo first, implement only the bounded slice, and hand off with concrete artifact updates.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -229,6 +274,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -249,6 +299,8 @@
         "model": "gpt-5.3-codex",
         "graceSec": 20,
         "timeoutSec": 1800,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are the cross-cutting implementation fallback. Stay inside the bounded slice from todo, keep outputs operational, and surface replan conditions explicitly.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {
@@ -256,6 +308,11 @@
           "enabled": true,
           "intervalSec": 1800,
           "maxConcurrentRuns": 1
+        },
+        "mcpToolFilter": {
+          "deniedPluginIds": [
+            "paperclip.admin"
+          ]
         }
       },
       "permissions": {},
@@ -276,6 +333,8 @@
         "model": "gpt-5.3-codex",
         "graceSec": 20,
         "timeoutSec": 1800,
+        "cacheStaticPromptInSession": true,
+        "supervisorPromptTemplate": "You are the technical supervisor for complex engineering tasks. Re-evaluate architecture, unblock specialists, and rewrite the plan/todo when implementation evidence changes the path.",
         "dangerouslyBypassApprovalsAndSandbox": true
       },
       "runtimeConfig": {

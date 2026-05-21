@@ -17,6 +17,7 @@ It is designed for:
 - `codex_local` as the default worker runtime
 - specialist-team routing instead of one generalist
 - `mac-wiki` as a durable knowledge companion
+- an MCP gateway pattern instead of per-agent raw MCP credentials
 
 ## Included specialists
 
@@ -54,3 +55,14 @@ After import, you should be able to:
 - route research to `ResearchArchivist` or `ResearchScout`
 - route implementation to `FrontendEngineer`, `BackendEngineer`, or `CodexCoder`
 - capture the durable output in `mac-wiki`
+
+## MCP gateway direction
+
+The recommended long-term model is:
+
+- agents do not each hold separate MCP credentials
+- Paperclip exposes a curated plugin tool surface
+- one gateway plugin/service owns upstream MCP auth and routing
+- subagents use `mcpToolFilter` so their visible tool surface stays narrow
+
+Reference: [MCP Gateway Pattern](../../docs/start/mcp-gateway-pattern.md)
