@@ -23,6 +23,8 @@ import {
   goalService,
   heartbeatService,
   issueApprovalService,
+  issueReportService,
+  telegramNotifyService,
   issueService,
   documentService,
   logActivity,
@@ -46,6 +48,8 @@ export function issueRoutes(db: Db, storage: StorageService) {
   const projectsSvc = projectService(db);
   const goalsSvc = goalService(db);
   const issueApprovalsSvc = issueApprovalService(db);
+  const issueReportsSvc = issueReportService(db);
+  const telegramNotifySvc = telegramNotifyService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workProductsSvc = workProductService(db);
   const documentsSvc = documentService(db);
@@ -975,6 +979,16 @@ export function issueRoutes(db: Db, storage: StorageService) {
       logger.warn({ err, issueId: issue.id }, "failed to seed supervisor skeleton documents");
     }
 
+    try {
+      await issueReportsSvc.upsertIssueReport(issue.id, {
+        changeSummary: "Auto-generated status report",
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to seed issue report document");
+    }
+
     if (issue.assigneeAgentId && issue.status !== "backlog") {
       void heartbeat
         .wakeup(issue.assigneeAgentId, {
@@ -1066,6 +1080,27 @@ export function issueRoutes(db: Db, storage: StorageService) {
 
     const actor = getActorInfo(req);
     const hasFieldChanges = Object.keys(previous).length > 0;
+
+    try {
+      await issueReportsSvc.upsertIssueReport(issue.id, {
+        changeSummary: commentBody ? "Refresh status report after issue update + comment" : "Refresh status report after issue update",
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to refresh issue report after update");
+    }
+
+    try {
+      await telegramNotifySvc.notifyIssueStatusChange(issue.id, {
+        previousStatus: existing.status,
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to send telegram status update after issue patch");
+    }
+
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: actor.actorType,
@@ -1286,6 +1321,26 @@ export function issueRoutes(db: Db, storage: StorageService) {
           contextSnapshot: { issueId: issue.id, source: "issue.checkout" },
         })
         .catch((err) => logger.warn({ err, issueId: issue.id }, "failed to wake assignee on issue checkout"));
+    }
+
+    try {
+      await issueReportsSvc.upsertIssueReport(updated.id, {
+        changeSummary: "Refresh status report after checkout",
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: updated.id }, "failed to refresh issue report after checkout");
+    }
+
+    try {
+      await telegramNotifySvc.notifyIssueStatusChange(updated.id, {
+        previousStatus: issue.status,
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: updated.id }, "failed to send telegram status update after checkout");
     }
 
     res.json(updated);
@@ -1521,6 +1576,16 @@ export function issueRoutes(db: Db, storage: StorageService) {
         ...(handoffAssigneeChanged ? { handoffAssignedTo: effectiveIssue.assigneeAgentId } : {}),
       },
     });
+
+    try {
+      await issueReportsSvc.upsertIssueReport(effectiveIssue.id, {
+        changeSummary: "Refresh status report after comment",
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: effectiveIssue.id }, "failed to refresh issue report after comment");
+    }
 
     // Merge all wakeups from this comment into one enqueue per agent to avoid duplicate runs.
     void (async () => {

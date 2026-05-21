@@ -40,7 +40,11 @@ import { queryKeys } from "./lib/queryKeys";
 import { useCompany } from "./context/CompanyContext";
 import { useDialog } from "./context/DialogContext";
 import { loadLastInboxTab } from "./lib/inbox";
-import { shouldRedirectCompanylessRouteToOnboarding } from "./lib/onboarding-route";
+import { readOnboardingStatus } from "./lib/onboarding-progress";
+import {
+  shouldRedirectCompanylessRouteToOnboarding,
+  shouldRedirectToOnboardingByStatus,
+} from "./lib/onboarding-route";
 
 function BootstrapPendingPage({ hasActiveInvite = false }: { hasActiveInvite?: boolean }) {
   return (
@@ -226,6 +230,7 @@ function OnboardingRoutePage() {
 function CompanyRootRedirect() {
   const { companies, selectedCompany, loading } = useCompany();
   const location = useLocation();
+  const onboardingStatus = readOnboardingStatus();
 
   if (loading) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
@@ -242,6 +247,15 @@ function CompanyRootRedirect() {
       return <Navigate to="/onboarding" replace />;
     }
     return <NoCompaniesStartPage />;
+  }
+
+  if (
+    shouldRedirectToOnboardingByStatus({
+      pathname: location.pathname,
+      onboardingStatus,
+    })
+  ) {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return <Navigate to={`/${targetCompany.issuePrefix}/dashboard`} replace />;
@@ -250,6 +264,7 @@ function CompanyRootRedirect() {
 function UnprefixedBoardRedirect() {
   const location = useLocation();
   const { companies, selectedCompany, loading } = useCompany();
+  const onboardingStatus = readOnboardingStatus();
 
   if (loading) {
     return <div className="mx-auto max-w-xl py-10 text-sm text-muted-foreground">Loading...</div>;
@@ -266,6 +281,15 @@ function UnprefixedBoardRedirect() {
       return <Navigate to="/onboarding" replace />;
     }
     return <NoCompaniesStartPage />;
+  }
+
+  if (
+    shouldRedirectToOnboardingByStatus({
+      pathname: location.pathname,
+      onboardingStatus,
+    })
+  ) {
+    return <Navigate to="/onboarding" replace />;
   }
 
   return (

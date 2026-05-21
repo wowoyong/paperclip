@@ -39,6 +39,8 @@ import {
   sanitizeRuntimeServiceBaseEnv,
 } from "./workspace-runtime.js";
 import { issueService } from "./issues.js";
+import { issueReportService } from "./issue-reports.js";
+import { telegramNotifyService } from "./telegram-notify.js";
 import { executionWorkspaceService } from "./execution-workspaces.js";
 import { workspaceOperationService } from "./workspace-operations.js";
 import {
@@ -767,6 +769,8 @@ export function heartbeatService(db: Db) {
   const runLogStore = getRunLogStore();
   const secretsSvc = secretService(db);
   const issuesSvc = issueService(db);
+  const issueReportsSvc = issueReportService(db);
+  const telegramNotifySvc = telegramNotifyService(db);
   const executionWorkspacesSvc = executionWorkspaceService(db);
   const workspaceOperationsSvc = workspaceOperationService(db);
   const activeRunExecutions = new Set<string>();
@@ -2543,6 +2547,16 @@ export function heartbeatService(db: Db) {
                 ].join("\n"),
                 { agentId: agent.id },
               );
+              await issueReportsSvc.upsertIssueReport(issueId, {
+                changeSummary: "Refresh status report after automatic human-review escalation",
+                createdByAgentId: agent.id,
+                createdByUserId: null,
+              });
+              await telegramNotifySvc.notifyIssueStatusChange(issueId, {
+                previousStatus: "in_progress",
+                createdByAgentId: agent.id,
+                createdByUserId: null,
+              });
             }
           } else if (prevRetries < MAX_TRANSIENT_RETRIES) {
             const retryCount = prevRetries + 1;

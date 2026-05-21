@@ -2,6 +2,8 @@ export { companyService } from "./companies.js";
 export { agentService, deduplicateAgentName } from "./agents.js";
 export { assetService } from "./assets.js";
 export { documentService, extractLegacyPlanBody } from "./documents.js";
+export { issueReportService } from "./issue-reports.js";
+export { telegramNotifyService } from "./telegram-notify.js";
 export { projectService } from "./projects.js";
 export { issueService, type IssueFilters } from "./issues.js";
 export { issueApprovalService } from "./issue-approvals.js";

@@ -200,6 +200,13 @@ EOF
   fi
 }
 
+OUTPUT_MODE="summary"
+
+if [[ "${1:-}" == "--json" ]]; then
+  OUTPUT_MODE="json"
+  shift
+fi
+
 if [[ "${1:-}" == "--self-test" ]]; then
   run_self_test
   exit 0
@@ -243,9 +250,78 @@ if [[ -z "$PAPERCLIP_API_KEY" ]]; then
   exit 1
 fi
 
-AGENTS_JSON="$(curl -sS \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  "$PAPERCLIP_API_URL/api/companies/$COMPANY_ID/agents")"
+build_api_candidates() {
+  local primary_url="$1"
+  local urls=("$primary_url")
+  local alt_url=""
+
+  case "$primary_url" in
+    http://127.0.0.1:3050|http://localhost:3050)
+      alt_url="${primary_url/%:3050/:3100}"
+      ;;
+    http://127.0.0.1:3100|http://localhost:3100)
+      alt_url="${primary_url/%:3100/:3050}"
+      ;;
+  esac
+
+  if [[ -n "$alt_url" && "$alt_url" != "$primary_url" ]]; then
+    urls+=("$alt_url")
+  fi
+
+  printf '%s\n' "${urls[@]}"
+}
+
+api_request() {
+  local method="$1"
+  local path="$2"
+  local data="${3:-}"
+  local response=""
+  local last_error=""
+  local url=""
+  local attempt=0
+
+  while IFS= read -r url; do
+    [[ -z "$url" ]] && continue
+
+    for attempt in 1 2; do
+      if [[ -n "$data" ]]; then
+        if response="$(curl -fsS \
+          --connect-timeout 2 \
+          --max-time 20 \
+          -X "$method" \
+          -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
+          -H "Content-Type: application/json" \
+          "${url}${path}" \
+          -d "$data" 2>&1)"; then
+          PAPERCLIP_API_URL="$url"
+          printf '%s' "$response"
+          return 0
+        fi
+      else
+        if response="$(curl -fsS \
+          --connect-timeout 2 \
+          --max-time 20 \
+          -X "$method" \
+          -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
+          "${url}${path}" 2>&1)"; then
+          PAPERCLIP_API_URL="$url"
+          printf '%s' "$response"
+          return 0
+        fi
+      fi
+
+      last_error="$response"
+      if [[ "$attempt" -eq 1 ]]; then
+        sleep 1
+      fi
+    done
+  done < <(build_api_candidates "$PAPERCLIP_API_URL")
+
+  printf 'Paperclip API request failed for %s %s\n%s\n' "$method" "$path" "$last_error" >&2
+  return 1
+}
+
+AGENTS_JSON="$(api_request GET "/api/companies/$COMPANY_ID/agents")"
 
 agent_id_by_url_key() {
   local key="$1"
@@ -272,6 +348,10 @@ determine_routing "$REQUEST_TEXT"
 TITLE_SOURCE="$(printf '%s' "$REQUEST_TEXT" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
 TITLE_TRIMMED="$(printf '%s' "$TITLE_SOURCE" | cut -c1-72)"
 TITLE="Telegram intake: $TITLE_TRIMMED"
+TELEGRAM_CHAT_ID=""
+if [[ "$REQUEST_TEXT" =~ (Telegram\ chat\ id|chat[_\ -]?id|id)[[:space:]]*[:=][[:space:]]*([0-9]{5,}) ]]; then
+  TELEGRAM_CHAT_ID="${BASH_REMATCH[2]}"
+fi
 
 DESCRIPTION=$(jq -n \
   --arg req "$REQUEST_TEXT" \
@@ -279,8 +359,10 @@ DESCRIPTION=$(jq -n \
   --arg reason "$ROUTE_REASON" \
   --arg complexity "$COMPLEXITY" \
   --arg core "${CORE_AGENT_NAME:-}" \
+  --arg chatId "$TELEGRAM_CHAT_ID" \
   '[
     "Source: Telegram via OpenClaw",
+    (if $chatId != "" then "Telegram chat id: " + $chatId else empty end),
     "",
     "Original request:",
     $req,
@@ -306,9 +388,85 @@ PAYLOAD=$(jq -n \
     goalId: $goalId
   }')
 
-curl -sS \
-  -X POST \
-  -H "Authorization: Bearer $PAPERCLIP_API_KEY" \
-  -H "Content-Type: application/json" \
-  "$PAPERCLIP_API_URL/api/companies/$COMPANY_ID/issues" \
-  -d "$PAYLOAD"
+ISSUE_RESPONSE="$(api_request POST "/api/companies/$COMPANY_ID/issues" "$PAYLOAD")"
+
+ISSUE_ID="$(jq -r '.id // empty' <<<"$ISSUE_RESPONSE")"
+ISSUE_IDENTIFIER="$(jq -r '.identifier // empty' <<<"$ISSUE_RESPONSE")"
+ISSUE_STATUS="$(jq -r '.status // empty' <<<"$ISSUE_RESPONSE")"
+ISSUE_ASSIGNEE_ID="$(jq -r '.assigneeAgentId // empty' <<<"$ISSUE_RESPONSE")"
+
+if [[ -z "$ISSUE_ID" || -z "$ISSUE_STATUS" ]]; then
+  printf '%s\n' "$ISSUE_RESPONSE"
+  exit 1
+fi
+
+PAPERCLIP_PUBLIC_BASE_URL="${PAPERCLIP_PUBLIC_BASE_URL:-https://pc.greencatart.work}"
+ISSUE_REF="$ISSUE_ID"
+if [[ -n "$ISSUE_IDENTIFIER" ]]; then
+  ISSUE_REF="$ISSUE_IDENTIFIER"
+fi
+
+REPORT_URL="${PAPERCLIP_PUBLIC_BASE_URL}/reports?issue=${ISSUE_ID}"
+ISSUE_URL="${PAPERCLIP_PUBLIC_BASE_URL}/issues/${ISSUE_REF}"
+ASSIGNEE_LABEL="$ASSIGNEE_NAME"
+if [[ -z "$ASSIGNEE_LABEL" && -n "$ISSUE_ASSIGNEE_ID" ]]; then
+  ASSIGNEE_LABEL="$ISSUE_ASSIGNEE_ID"
+fi
+
+STATUS_LABEL="$ISSUE_STATUS"
+case "$ISSUE_STATUS" in
+  todo) STATUS_LABEL="대기" ;;
+  backlog) STATUS_LABEL="백로그" ;;
+  in_progress) STATUS_LABEL="진행 중" ;;
+  in_review) STATUS_LABEL="검토 중" ;;
+  blocked) STATUS_LABEL="막힘" ;;
+  done) STATUS_LABEL="완료" ;;
+  cancelled) STATUS_LABEL="취소됨" ;;
+esac
+
+SUMMARY_TEXT="$(cat <<EOF
+접수 완료
+
+- 이슈: ${ISSUE_REF}
+- 현재 상태: ${STATUS_LABEL}
+- 담당자: ${ASSIGNEE_LABEL}
+- 복잡도: ${COMPLEXITY}
+$(if [[ -n "${CORE_AGENT_NAME:-}" ]]; then printf '%s\n' "- 코어 에이전트: ${CORE_AGENT_NAME}"; fi)
+- 라우팅 이유: ${ROUTE_REASON}
+
+리포트: ${REPORT_URL}
+상세: ${ISSUE_URL}
+EOF
+)"
+
+if [[ "$OUTPUT_MODE" == "json" ]]; then
+  jq -n \
+    --arg issueId "$ISSUE_ID" \
+    --arg issueRef "$ISSUE_REF" \
+    --arg status "$ISSUE_STATUS" \
+    --arg statusLabel "$STATUS_LABEL" \
+    --arg assignee "$ASSIGNEE_LABEL" \
+    --arg complexity "$COMPLEXITY" \
+    --arg core "${CORE_AGENT_NAME:-}" \
+    --arg reason "$ROUTE_REASON" \
+    --arg reportUrl "$REPORT_URL" \
+    --arg issueUrl "$ISSUE_URL" \
+    --arg reply "$SUMMARY_TEXT" \
+    --argjson issue "$ISSUE_RESPONSE" \
+    '{
+      issueId: $issueId,
+      issueRef: $issueRef,
+      status: $status,
+      statusLabel: $statusLabel,
+      assignee: $assignee,
+      complexity: $complexity,
+      coreAgent: ($core | select(. != "")),
+      routingReason: $reason,
+      reportUrl: $reportUrl,
+      issueUrl: $issueUrl,
+      replyText: $reply,
+      issue: $issue
+    }'
+else
+  printf '%s\n' "$SUMMARY_TEXT"
+fi

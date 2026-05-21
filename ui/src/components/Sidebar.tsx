@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   DollarSign,
   History,
+  FileText,
   Search,
   SquarePen,
   Network,
@@ -109,6 +110,7 @@ export function Sidebar() {
 
         <SidebarSection label="업무">
           <SidebarNavItem to="/issues" label="이슈" icon={CircleDot} />
+          <SidebarNavItem to="/reports" label="리포트" icon={FileText} />
           <SidebarNavItem to="/goals" label="목표" icon={Target} />
         </SidebarSection>
 
