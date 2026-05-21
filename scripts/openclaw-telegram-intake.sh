@@ -173,6 +173,15 @@ mixed-en|Compare latest OpenAI policy/pricing and patch backend automation scrip
 research-heavy-db|최신 Supabase와 Neon 가격/정책 차이를 비교해서 어떤 걸 기본 DB로 쓰는 게 나은지 추천안 정리해줘|ResearchScout
 research-with-ticketing|최신 Supabase와 Neon 가격/정책 차이를 비교해서 추천안 정리하고 Paperclip 이슈로 만들고 담당자 배정까지 해줘|ResearchScout
 research-only|OpenAI/Anthropic latest pricing and policy comparison with references|ResearchScout
+archive-only|공식 문서와 가격 페이지 원문 링크만 모아서 source pack 형태로 정리해줘|ResearchArchivist
+planning-only|이 기능 아이디어를 PRD 형태로 정리하고 acceptance criteria까지 만들어줘|ProductPlanner
+ux-only|온보딩 플로우와 empty loading error 상태를 UX 관점에서 설계해줘|UXUIDesigner
+frontend-only|React 기준으로 온보딩 컴포넌트 구조와 상태 관리를 구현 태스크로 쪼개줘|FrontendEngineer
+backend-only|API 스키마와 인증 정책, 작업 큐 설계를 백엔드 관점에서 정리해줘|BackendEngineer
+automation-only|로컬 반복 작업 줄이게 설정 스크립트와 자동화 코드 수정안을 만들어줘|CodexCoder
+operations-only|이번 주 우선순위와 후속 액션을 체크리스트로 정리해줘|ChiefOfStaff
+new-project|새 프로젝트 시작: 고객 FAQ 챗봇 MVP 범위와 첫 주 체크리스트를 정리해줘|ChiefOfStaff
+strategic|전사 AI 에이전트 운영모델과 거버넌스 전략을 수립해줘|ChiefOfStaff
 EOF
 
   if [[ "$failures" -ne 0 ]]; then
