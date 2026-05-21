@@ -219,6 +219,13 @@ const TRANSIENT_ERROR_PATTERNS = [
   /\bcapacity\b/i,
   /\bserver_error\b/i,
   /\binternal.?server.?error\b/i,
+  /\bempty web search\b/i,
+];
+
+const EMPTY_WEB_SEARCH_PATTERNS = [
+  /\bempty web search\b/i,
+  /\bblank web search\b/i,
+  /\bweb search with an empty query\b/i,
 ];
 
 const REFUSAL_PATTERNS = [
@@ -245,6 +252,12 @@ function isTransientError(
   const text = stderrOrError ?? "";
   if (!text) return false;
   return TRANSIENT_ERROR_PATTERNS.some((re) => re.test(text));
+}
+
+function isEmptyWebSearchError(stderrOrError: string | null | undefined): boolean {
+  const text = stderrOrError ?? "";
+  if (!text) return false;
+  return EMPTY_WEB_SEARCH_PATTERNS.some((re) => re.test(text));
 }
 
 /**
@@ -2477,7 +2490,61 @@ export function heartbeatService(db: Db) {
           const prevRetries = typeof contextSnapshot._transientRetryCount === "number"
             ? contextSnapshot._transientRetryCount
             : 0;
-          if (prevRetries < MAX_TRANSIENT_RETRIES) {
+          const combinedErrorText = `${stderrExcerpt ?? ""} ${adapterResult.errorMessage ?? ""}`;
+          const emptyWebSearchRetry = isEmptyWebSearchError(combinedErrorText);
+          if (emptyWebSearchRetry) {
+            const stageAttempt =
+              typeof contextSnapshot._searchFallbackAttempt === "number"
+                ? contextSnapshot._searchFallbackAttempt
+                : 0;
+            const nextAttempt = stageAttempt + 1;
+            const nextStage = nextAttempt <= 2 ? "rewrite_query" : nextAttempt === 3 ? "web_fetch_fallback" : null;
+            if (nextStage) {
+              const backoffMs = nextStage === "web_fetch_fallback" ? 60_000 : 20_000 * nextAttempt;
+              logger.info(
+                { runId, agentId: agent.id, issueId, nextAttempt, nextStage, backoffMs },
+                "scheduling empty-web-search fallback retry",
+              );
+              setTimeout(() => {
+                enqueueWakeup(agent.id, {
+                  source: "automation",
+                  triggerDetail: "system",
+                  reason: `empty_web_search_${nextStage}_${nextAttempt}`,
+                  contextSnapshot: {
+                    issueId,
+                    _transientRetryCount: prevRetries + 1,
+                    _searchFallbackStage: nextStage,
+                    _searchFallbackAttempt: nextAttempt,
+                  },
+                  requestedByActorType: "system",
+                }).catch((retryErr) => {
+                  logger.warn(
+                    { err: retryErr, runId, agentId: agent.id },
+                    "failed to enqueue empty-web-search fallback retry",
+                  );
+                });
+              }, backoffMs);
+            } else {
+              logger.warn(
+                { runId, agentId: agent.id, issueId },
+                "empty-web-search fallback exhausted — moving issue to in_review",
+              );
+              await issuesSvc.update(issueId, { status: "in_review" });
+              await issuesSvc.addComment(
+                issueId,
+                [
+                  "Automatic search fallback was exhausted.",
+                  "Attempts performed:",
+                  "- query rewrite retry 1",
+                  "- query rewrite retry 2",
+                  "- web fetch fallback",
+                  "",
+                  "Moving this issue to in_review for human follow-up.",
+                ].join("\n"),
+                { agentId: agent.id },
+              );
+            }
+          } else if (prevRetries < MAX_TRANSIENT_RETRIES) {
             const retryCount = prevRetries + 1;
             const backoffMs = Math.min(30_000 * Math.pow(2, prevRetries), 10 * 60_000); // 30s, 60s, 120s, 240s, 480s — capped at 10min
             logger.info(

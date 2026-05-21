@@ -1,9 +1,18 @@
 import { asString, asNumber, parseObject, parseJson } from "@paperclipai/adapter-utils/server-utils";
 
+function extractErrorText(value: unknown): string {
+  const errorObj = parseObject(value);
+  const code = asString(errorObj.code, "").trim();
+  const message = asString(errorObj.message, "").trim();
+  if (code && message) return `${code}: ${message}`;
+  return message || code;
+}
+
 export function parseCodexJsonl(stdout: string) {
   let sessionId: string | null = null;
   const messages: string[] = [];
   let errorMessage: string | null = null;
+  let emptyWebSearchStarted = false;
   const usage = {
     inputTokens: 0,
     cachedInputTokens: 0,
@@ -24,7 +33,7 @@ export function parseCodexJsonl(stdout: string) {
     }
 
     if (type === "error") {
-      const msg = asString(event.message, "").trim();
+      const msg = extractErrorText(event.error) || asString(event.message, "").trim();
       if (msg) errorMessage = msg;
       continue;
     }
@@ -38,6 +47,15 @@ export function parseCodexJsonl(stdout: string) {
       continue;
     }
 
+    if (type === "item.started") {
+      const item = parseObject(event.item);
+      if (asString(item.type, "") === "web_search") {
+        const query = asString(item.query, "").trim();
+        if (!query) emptyWebSearchStarted = true;
+      }
+      continue;
+    }
+
     if (type === "turn.completed") {
       const usageObj = parseObject(event.usage);
       usage.inputTokens = asNumber(usageObj.input_tokens, usage.inputTokens);
@@ -47,8 +65,7 @@ export function parseCodexJsonl(stdout: string) {
     }
 
     if (type === "turn.failed") {
-      const err = parseObject(event.error);
-      const msg = asString(err.message, "").trim();
+      const msg = extractErrorText(event.error);
       if (msg) errorMessage = msg;
     }
   }
@@ -58,6 +75,7 @@ export function parseCodexJsonl(stdout: string) {
     summary: messages.join("\n\n").trim(),
     usage,
     errorMessage,
+    emptyWebSearchStarted,
   };
 }
 

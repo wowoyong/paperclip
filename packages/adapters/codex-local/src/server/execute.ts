@@ -173,6 +173,9 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
     config.promptTemplate,
     "You are agent {{agent.id}} ({{agent.name}}). Continue your Paperclip work.",
   );
+  const staticPromptTemplate = asString(config.staticPromptTemplate, "");
+  const supervisorPromptTemplate = asString(config.supervisorPromptTemplate, "");
+  const cacheStaticPromptInSession = asBoolean(config.cacheStaticPromptInSession, true);
   const command = asString(config.command, "codex");
   const model = asString(config.model, "");
   const modelReasoningEffort = asString(
@@ -258,6 +261,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   const linkedIssueIds = Array.isArray(context.issueIds)
     ? context.issueIds.filter((value): value is string => typeof value === "string" && value.trim().length > 0)
     : [];
+  const searchFallbackStage =
+    typeof context._searchFallbackStage === "string" && context._searchFallbackStage.trim().length > 0
+      ? context._searchFallbackStage.trim()
+      : "";
+  const searchFallbackAttempt =
+    typeof context._searchFallbackAttempt === "number" && Number.isFinite(context._searchFallbackAttempt)
+      ? context._searchFallbackAttempt
+      : 0;
   if (wakeTaskId) {
     env.PAPERCLIP_TASK_ID = wakeTaskId;
   }
@@ -332,7 +343,12 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
 
   const timeoutSec = asNumber(config.timeoutSec, 0);
   const graceSec = asNumber(config.graceSec, 20);
-  const idleTimeoutSec = typeof config.idleTimeoutSec === "number" ? config.idleTimeoutSec : undefined;
+  const idleTimeoutSec =
+    typeof config.idleTimeoutSec === "number"
+      ? config.idleTimeoutSec
+      : search
+        ? 240
+        : undefined;
   const maxTimeoutSec = typeof config.maxTimeoutSec === "number" ? config.maxTimeoutSec : undefined;
   const extraArgs = (() => {
     const fromExtraArgs = asStringArray(config.extraArgs);
@@ -355,9 +371,20 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
   }
   const instructionsFilePath = asString(config.instructionsFilePath, "").trim();
   const instructionsDir = instructionsFilePath ? `${path.dirname(instructionsFilePath)}/` : "";
+  const shouldSendStaticPrompt = !sessionId || !cacheStaticPromptInSession;
+  const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
+  const templateData = {
+    agentId: agent.id,
+    companyId: agent.companyId,
+    runId,
+    company: { id: agent.companyId },
+    agent,
+    run: { id: runId, source: "on_demand" },
+    context,
+  };
   let instructionsPrefix = "";
   let instructionsChars = 0;
-  if (instructionsFilePath) {
+  if (instructionsFilePath && shouldSendStaticPrompt) {
     try {
       const instructionsContents = await fs.readFile(instructionsFilePath, "utf8");
       instructionsPrefix =
@@ -377,45 +404,82 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       );
     }
   }
+  const renderedStaticPrompt =
+    shouldSendStaticPrompt && staticPromptTemplate.trim().length > 0
+      ? renderTemplate(staticPromptTemplate, templateData).trim()
+      : "";
+  const renderedSupervisorPrompt =
+    supervisorPromptTemplate.trim().length > 0
+      ? renderTemplate(supervisorPromptTemplate, templateData).trim()
+      : "";
   const commandNotes = (() => {
-    if (!instructionsFilePath) return [] as string[];
-    if (instructionsPrefix.length > 0) {
-      return [
-        `Loaded agent instructions from ${instructionsFilePath}`,
-        `Prepended instructions + path directive to stdin prompt (relative references from ${instructionsDir}).`,
-      ];
+    const notes: string[] = [];
+    if (instructionsFilePath) {
+      if (instructionsPrefix.length > 0) {
+        notes.push(`Loaded agent instructions from ${instructionsFilePath}`);
+        notes.push(`Prepended instructions + path directive to stdin prompt (relative references from ${instructionsDir}).`);
+      } else if (!shouldSendStaticPrompt && cacheStaticPromptInSession) {
+        notes.push(`Reused cached static instructions from prior session: ${instructionsFilePath}`);
+      } else {
+        notes.push(`Configured instructionsFilePath ${instructionsFilePath}, but file could not be read; continuing without injected instructions.`);
+      }
     }
-    return [
-      `Configured instructionsFilePath ${instructionsFilePath}, but file could not be read; continuing without injected instructions.`,
-    ];
+    if (renderedStaticPrompt.length > 0) {
+      notes.push(`Injected staticPromptTemplate into the ${sessionId ? "current" : "initial"} Codex prompt.`);
+    } else if (staticPromptTemplate.trim().length > 0 && !shouldSendStaticPrompt && cacheStaticPromptInSession) {
+      notes.push("Reused cached staticPromptTemplate from prior Codex session.");
+    }
+    if (renderedSupervisorPrompt.length > 0) {
+      notes.push("Injected supervisorPromptTemplate into this run prompt.");
+    }
+    return notes;
   })();
-  const bootstrapPromptTemplate = asString(config.bootstrapPromptTemplate, "");
-  const templateData = {
-    agentId: agent.id,
-    companyId: agent.companyId,
-    runId,
-    company: { id: agent.companyId },
-    agent,
-    run: { id: runId, source: "on_demand" },
-    context,
-  };
   const renderedPrompt = renderTemplate(promptTemplate, templateData);
   const renderedBootstrapPrompt =
     !sessionId && bootstrapPromptTemplate.trim().length > 0
       ? renderTemplate(bootstrapPromptTemplate, templateData).trim()
       : "";
   const sessionHandoffNote = asString(context.paperclipSessionHandoffMarkdown, "").trim();
+  const searchFallbackNote = (() => {
+    if (!searchFallbackStage) return "";
+    if (searchFallbackStage === "rewrite_query") {
+      return [
+        "Search fallback mode is active because a prior run stalled on an empty web search query.",
+        `This is retry attempt ${searchFallbackAttempt || 1}.`,
+        "Do not call web search with an empty query.",
+        "Rewrite the search into a concrete query with explicit entities, timeframe, and target source.",
+        "If the first search phrase feels vague, produce a second tighter query and use that instead.",
+        "If evidence is still weak, return a partial answer with clear gaps rather than idling.",
+      ].join("\n");
+    }
+    if (searchFallbackStage === "web_fetch_fallback") {
+      return [
+        "Search fallback mode is active because repeated web searches stalled or returned no usable retrieval.",
+        `This is fallback attempt ${searchFallbackAttempt || 1}.`,
+        "Do not issue a blank or generic web search.",
+        "Prefer direct retrieval from known official URLs, repository docs, or clearly identified pages.",
+        "If direct retrieval still fails, produce a concise partial brief, list the missing evidence, and state that the task should move to human review.",
+      ].join("\n");
+    }
+    return "";
+  })();
   const prompt = joinPromptSections([
     instructionsPrefix,
+    renderedStaticPrompt,
     renderedBootstrapPrompt,
+    renderedSupervisorPrompt,
+    searchFallbackNote,
     sessionHandoffNote,
     renderedPrompt,
   ]);
   const promptMetrics = {
     promptChars: prompt.length,
     instructionsChars,
+    staticPromptChars: renderedStaticPrompt.length,
     bootstrapPromptChars: renderedBootstrapPrompt.length,
+    supervisorPromptChars: renderedSupervisorPrompt.length,
     sessionHandoffChars: sessionHandoffNote.length,
+    searchFallbackChars: searchFallbackNote.length,
     heartbeatPromptChars: renderedPrompt.length,
   };
 
@@ -493,11 +557,14 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       };
     }
     if (attempt.proc.idledOut) {
+      const idleReason = attempt.parsed.emptyWebSearchStarted
+        ? `empty web search stalled and idled out after ${idleTimeoutSec ?? "default"}s`
+        : `Killed due to idle (no output for ${idleTimeoutSec ?? "default"}s)`;
       return {
         exitCode: attempt.proc.exitCode,
         signal: attempt.proc.signal,
         timedOut: true,
-        errorMessage: `Killed due to idle (no output for ${idleTimeoutSec ?? "default"}s)`,
+        errorMessage: idleReason,
         clearSession: clearSessionOnMissingSession,
       };
     }
@@ -523,8 +590,10 @@ export async function execute(ctx: AdapterExecutionContext): Promise<AdapterExec
       exitCode: attempt.proc.exitCode,
       signal: attempt.proc.signal,
       timedOut: false,
+      // Preserve provider-surfaced JSON errors even when Codex exits 0 so
+      // heartbeat retry logic can classify transient upstream failures.
       errorMessage:
-        (attempt.proc.exitCode ?? 0) === 0
+        (attempt.proc.exitCode ?? 0) === 0 && !parsedError
           ? null
           : fallbackErrorMessage,
       usage: attempt.parsed.usage,

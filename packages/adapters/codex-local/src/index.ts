@@ -22,10 +22,13 @@ Adapter: codex_local
 
 Core fields:
 - cwd (string, optional): default absolute working directory fallback for the agent process (created if missing when possible)
-- instructionsFilePath (string, optional): absolute path to a markdown instructions file prepended to stdin prompt at runtime
+- instructionsFilePath (string, optional): absolute path to a markdown instructions file used as the static/base prompt section
+- staticPromptTemplate (string, optional): inline static/base prompt section that should be cached in the session when possible
+- cacheStaticPromptInSession (boolean, optional): defaults to true; when enabled, static prompt sections are only sent on fresh sessions
 - model (string, optional): Codex model id
 - modelReasoningEffort (string, optional): reasoning effort override (minimal|low|medium|high) passed via -c model_reasoning_effort=...
-- promptTemplate (string, optional): run prompt template
+- promptTemplate (string, optional): per-run heartbeat prompt template
+- supervisorPromptTemplate (string, optional): per-run supervisor overlay appended ahead of the heartbeat prompt
 - search (boolean, optional): run codex with --search
 - dangerouslyBypassApprovalsAndSandbox (boolean, optional): run with bypass flag
 - command (string, optional): defaults to "codex"
@@ -37,10 +40,13 @@ Core fields:
 Operational fields:
 - timeoutSec (number, optional): run timeout in seconds
 - graceSec (number, optional): SIGTERM grace period in seconds
+- idleTimeoutSec (number, optional): kill the run when no stdout/stderr arrives for this long
 
 Notes:
 - Prompts are piped via stdin (Codex receives "-" prompt argument).
+- Static prompt sections (shared instructions, durable skills, stable workflow rules) can be cached into the Codex session while short-lived supervisor overlays are resent every run.
 - Paperclip auto-injects local skills into Codex personal skills dir ("$CODEX_HOME/skills" or "~/.codex/skills") when missing, so Codex can discover "$paperclip" and related skills.
 - Some model/tool combinations reject certain effort levels (for example minimal with web search enabled).
+- Search-enabled runs default to a tighter idle timeout (240s) when idleTimeoutSec is unset, so stalled searches fail fast instead of hanging indefinitely.
 - When Paperclip realizes a workspace/runtime for a run, it injects PAPERCLIP_WORKSPACE_* and PAPERCLIP_RUNTIME_* env vars for agent-side tooling.
 `;

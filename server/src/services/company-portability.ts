@@ -188,7 +188,7 @@ function normalizePortableConfig(
   const next: Record<string, unknown> = {};
 
   for (const [key, entry] of Object.entries(input)) {
-    if (key === "cwd" || key === "instructionsFilePath") continue;
+    if (key === "cwd" || key === "instructionsFilePath" || key === "staticPromptTemplate") continue;
     if (key === "env") {
       next[key] = normalizePortableEnv(agentSlug, entry, requiredSecrets);
       continue;
@@ -462,6 +462,16 @@ async function readAgentInstructions(agent: AgentLike): Promise<{ body: string; 
       }
     }
   }
+  const staticPromptTemplate = asString(config.staticPromptTemplate);
+  if (staticPromptTemplate) {
+    const warning = instructionsFilePath
+      ? `Agent ${agent.name} instructionsFilePath was not readable; fell back to staticPromptTemplate.`
+      : null;
+    return {
+      body: staticPromptTemplate,
+      warning,
+    };
+  }
   const promptTemplate = asString(config.promptTemplate);
   if (promptTemplate) {
     const warning = instructionsFilePath
@@ -474,7 +484,7 @@ async function readAgentInstructions(agent: AgentLike): Promise<{ body: string; 
   }
   return {
     body: "_No AGENTS instructions were resolved from current agent config._",
-    warning: `Agent ${agent.name} has no resolvable instructionsFilePath/promptTemplate; exported placeholder AGENTS.md.`,
+    warning: `Agent ${agent.name} has no resolvable instructionsFilePath/staticPromptTemplate/promptTemplate; exported placeholder AGENTS.md.`,
   };
 }
 
@@ -909,10 +919,21 @@ export function companyPortabilityService(db: Db) {
           warnings.push(`Missing AGENTS markdown for ${manifestAgent.slug}; imported without prompt template.`);
         }
         const markdown = markdownRaw ? parseFrontmatterMarkdown(markdownRaw) : { frontmatter: {}, body: "" };
+        const manifestAdapterConfig = (manifestAgent.adapterConfig as Record<string, unknown>) ?? {};
         const adapterConfig = {
-          ...manifestAgent.adapterConfig,
-          promptTemplate: markdown.body || asString((manifestAgent.adapterConfig as Record<string, unknown>).promptTemplate) || "",
+          ...manifestAdapterConfig,
         } as Record<string, unknown>;
+        if (manifestAgent.adapterType === "codex_local") {
+          const staticPromptBody =
+            markdown.body || asString(manifestAdapterConfig.staticPromptTemplate) || asString(manifestAdapterConfig.promptTemplate) || "";
+          if (staticPromptBody) adapterConfig.staticPromptTemplate = staticPromptBody;
+          if (!asString(manifestAdapterConfig.promptTemplate)) {
+            delete adapterConfig.promptTemplate;
+          }
+        } else {
+          adapterConfig.promptTemplate =
+            markdown.body || asString(manifestAdapterConfig.promptTemplate) || "";
+        }
         delete adapterConfig.instructionsFilePath;
         const patch = {
           name: planAgent.plannedName,
