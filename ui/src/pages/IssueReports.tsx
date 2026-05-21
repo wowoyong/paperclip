@@ -70,7 +70,7 @@ function buildFallbackReport(issue: Issue, comments: IssueComment[], docs: Issue
 }
 
 export function IssueReports() {
-  const { selectedCompanyId } = useCompany();
+  const { selectedCompanyId, setSelectedCompanyId } = useCompany();
   const { setBreadcrumbs } = useBreadcrumbs();
   const [searchParams, setSearchParams] = useSearchParams();
 
@@ -82,20 +82,34 @@ export function IssueReports() {
     setBreadcrumbs([{ label: "리포트" }]);
   }, [setBreadcrumbs]);
 
+  const { data: issueFromParam, isLoading: issueFromParamLoading } = useQuery({
+    queryKey: queryKeys.issues.detail(selectedIssueId || "__none__"),
+    queryFn: () => issuesApi.get(selectedIssueId),
+    enabled: !!selectedIssueId,
+  });
+
+  const effectiveCompanyId = selectedCompanyId ?? issueFromParam?.companyId ?? null;
+
+  useEffect(() => {
+    if (!issueFromParam?.companyId) return;
+    if (selectedCompanyId === issueFromParam.companyId) return;
+    setSelectedCompanyId(issueFromParam.companyId, { source: "manual" });
+  }, [issueFromParam?.companyId, selectedCompanyId, setSelectedCompanyId]);
+
   const { data: issues = [], isLoading, error } = useQuery({
-    queryKey: queryKeys.issues.list(selectedCompanyId ?? "__none__"),
+    queryKey: queryKeys.issues.list(effectiveCompanyId ?? "__none__"),
     queryFn: () =>
-      issuesApi.list(selectedCompanyId!, {
+      issuesApi.list(effectiveCompanyId!, {
         status: "backlog,todo,in_progress,in_review,blocked,done,cancelled",
         q: topicFilter || undefined,
       }),
-    enabled: !!selectedCompanyId,
+    enabled: !!effectiveCompanyId,
   });
 
   const { data: agents = [] } = useQuery({
-    queryKey: queryKeys.agents.list(selectedCompanyId ?? "__none__"),
-    queryFn: () => agentsApi.list(selectedCompanyId!),
-    enabled: !!selectedCompanyId,
+    queryKey: queryKeys.agents.list(effectiveCompanyId ?? "__none__"),
+    queryFn: () => agentsApi.list(effectiveCompanyId!),
+    enabled: !!effectiveCompanyId,
   });
 
   const filteredIssues = useMemo(() => {
@@ -113,8 +127,11 @@ export function IssueReports() {
   }, [filteredIssues]);
 
   const selectedIssue = useMemo(() => {
-    return filteredIssues.find((issue) => issue.id === selectedIssueId) ?? filteredIssues[0] ?? null;
-  }, [filteredIssues, selectedIssueId]);
+    if (selectedIssueId) {
+      return filteredIssues.find((issue) => issue.id === selectedIssueId) ?? issueFromParam ?? filteredIssues[0] ?? null;
+    }
+    return filteredIssues[0] ?? issueFromParam ?? null;
+  }, [filteredIssues, issueFromParam, selectedIssueId]);
 
   useEffect(() => {
     if (!selectedIssue) return;
@@ -153,7 +170,7 @@ export function IssueReports() {
     return agents.find((agent) => agent.id === issueDetail.assigneeAgentId)?.name ?? issueDetail.assigneeAgentId;
   }, [agents, issueDetail]);
 
-  if (!selectedCompanyId) {
+  if (!effectiveCompanyId && !issueFromParamLoading) {
     return <EmptyState icon={FileText} message="리포트를 보려면 회사를 선택하세요." />;
   }
 
