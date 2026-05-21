@@ -173,6 +173,20 @@ Paperclip handles the hard orchestration details correctly.
 
 Open source. Self-hosted. No Paperclip account required.
 
+### Using the wowoyong fork?
+
+The `wowoyong/paperclip` fork is positioned as a personal operator OS:
+
+- `codex_local` first, instead of defaulting to one giant generalist
+- specialist teams for planning, research, design, frontend, backend, and execution
+- Telegram/OpenClaw intake as a practical front door
+- `mac-wiki` as the durable memory layer for reusable knowledge
+
+Start with:
+
+- `docs/start/wowoyong-fork.md`
+- `examples/wowoyong-personal-os/`
+
 ```bash
 npx paperclipai onboard --yes
 ```

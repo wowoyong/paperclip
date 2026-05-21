@@ -5,7 +5,15 @@ summary: Opinionated starter path for the wowoyong Paperclip fork
 
 # wowoyong Fork
 
-The `wowoyong/paperclip` fork treats Paperclip less like a generic orchestration substrate and more like an operator OS for running specialist agents.
+The `wowoyong/paperclip` fork turns Paperclip into an operator OS for a solo builder or small agency. The goal is not just to run agents, but to run a compact specialist team that can intake work, route it well, leave durable artifacts, and compound knowledge over time.
+
+## What you get
+
+- a CEO-first company bootstrap path built around `codex_local`
+- a specialist-team default instead of one oversized generalist
+- intake that fits Telegram/OpenClaw workflows
+- a memory model that expects reusable outputs to land in `mac-wiki`
+- a practical path from idea to plan, research, implementation, and handoff
 
 ## Core stance
 
@@ -39,3 +47,13 @@ Start with this org shape:
 ## Starter package
 
 See `examples/wowoyong-personal-os/` for a portable starter-company package you can import and adapt.
+
+## First-day outcome
+
+If setup goes well, your first day should end with:
+
+1. a running `CEO` on `codex_local`
+2. a first specialist team online
+3. a kickoff issue with a clear owner
+4. a durable roadmap or context artifact
+5. a linked place for reusable knowledge in `mac-wiki`

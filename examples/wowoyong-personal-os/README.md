@@ -2,6 +2,15 @@
 
 This folder is an opinionated starter-company package for the `wowoyong/paperclip` fork.
 
+It is meant to help you launch a personal operator company quickly, not just import a bag of agent files.
+
+The target outcome is:
+
+- one CEO that can keep direction and quality high
+- a specialist bench that can plan, research, design, and implement
+- a default path from intake to durable artifact
+- a company shape that compounds into `mac-wiki` instead of disappearing into chat
+
 It is designed for:
 
 - a solo operator or small agency
@@ -35,3 +44,13 @@ It is designed for:
 3. Verify the first heartbeat for `CEO` and `FoundingEngineer`.
 4. Add `OpenClawAssistant` only after your local OpenClaw gateway details are confirmed.
 5. Connect the company to `mac-wiki` conventions and starter playbooks.
+
+## What success looks like
+
+After import, you should be able to:
+
+- open the company in Paperclip and see the specialist org chart
+- assign a kickoff issue to `ChiefOfStaff` or `ProductPlanner`
+- route research to `ResearchArchivist` or `ResearchScout`
+- route implementation to `FrontendEngineer`, `BackendEngineer`, or `CodexCoder`
+- capture the durable output in `mac-wiki`

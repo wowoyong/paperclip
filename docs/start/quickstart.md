@@ -5,7 +5,7 @@ summary: Get Paperclip running in minutes
 
 Get Paperclip running locally in under 5 minutes.
 
-If you're using the `wowoyong/paperclip` fork as a personal operator OS, prefer `codex_local` for your CEO and build a specialist team early instead of relying on one generalist agent.
+If you're using the `wowoyong/paperclip` fork, treat this setup as the first step toward a personal operator OS. Prefer `codex_local` for your CEO, stand up specialists early, and make durable outputs part of the default flow from day one.
 
 ## Quick Start (Recommended)
 
@@ -49,12 +49,12 @@ Once Paperclip is running:
 
 ## wowoyong fork starter path
 
-If you want the opinionated `wowoyong` fork workflow, see:
+If you want the opinionated `wowoyong` fork workflow, start here:
 
 - `examples/wowoyong-personal-os/`
 - `docs/start/wowoyong-fork.md`
 
-This fork is optimized around:
+The fork is optimized for:
 
 - Telegram/OpenClaw intake
 - specialist-team routing
