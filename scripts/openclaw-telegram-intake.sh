@@ -96,7 +96,7 @@ determine_routing() {
     ASSIGNEE_ID="$CHIEF_ID"
     ASSIGNEE_NAME="ChiefOfStaff"
     ROUTE_REASON="matched mixed request (research + implementation); route through supervisor for research-first decomposition"
-  elif [[ "$HAS_ARCHIVE_INTENT" -eq 1 && "$HAS_RESEARCH_INTENT" -eq 0 && "$IMPLEMENTATION_INTENT_COUNT" -eq 0 ]]; then
+  elif [[ "$HAS_ARCHIVE_INTENT" -eq 1 && "$IMPLEMENTATION_INTENT_COUNT" -eq 0 ]]; then
     ASSIGNEE_ID="$ARCHIVIST_ID"
     ASSIGNEE_NAME="ResearchArchivist"
     ROUTE_REASON="matched source gathering / evidence intent"
@@ -177,7 +177,7 @@ archive-only|공식 문서와 가격 페이지 원문 링크만 모아서 source
 planning-only|이 기능 아이디어를 PRD 형태로 정리하고 acceptance criteria까지 만들어줘|ProductPlanner
 ux-only|온보딩 플로우와 empty loading error 상태를 UX 관점에서 설계해줘|UXUIDesigner
 frontend-only|React 기준으로 온보딩 컴포넌트 구조와 상태 관리를 구현 태스크로 쪼개줘|FrontendEngineer
-backend-only|API 스키마와 인증 정책, 작업 큐 설계를 백엔드 관점에서 정리해줘|BackendEngineer
+backend-only|API 스키마와 인증 흐름, 작업 큐 설계를 백엔드 관점에서 정리해줘|BackendEngineer
 automation-only|로컬 반복 작업 줄이게 설정 스크립트와 자동화 코드 수정안을 만들어줘|CodexCoder
 operations-only|이번 주 우선순위와 후속 액션을 체크리스트로 정리해줘|ChiefOfStaff
 new-project|새 프로젝트 시작: 고객 FAQ 챗봇 MVP 범위와 첫 주 체크리스트를 정리해줘|ChiefOfStaff
