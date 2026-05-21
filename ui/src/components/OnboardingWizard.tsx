@@ -66,13 +66,20 @@ type AdapterType =
   | "http"
   | "openclaw_gateway";
 
-const DEFAULT_TASK_DESCRIPTION = `Setup yourself as the CEO. Use the ceo persona found here: 
+const DEFAULT_TASK_DESCRIPTION = `Bootstrap yourself as the CEO of an operator-style agent company.
 
-https://github.com/paperclipai/companies/blob/main/default/ceo/AGENTS.md
+Create a durable home at agents/ceo and make sure your AGENTS.md, HEARTBEAT.md, SOUL.md, and TOOLS.md live there.
 
-Ensure you have a folder agents/ceo and then download this AGENTS.md, and sibling HEARTBEAT.md, SOUL.md, and TOOLS.md. and set that AGENTS.md as the path to your agents instruction file
+Then set up your first specialist team in this order:
+1. ChiefOfStaff
+2. ProductPlanner
+3. ResearchArchivist
+4. ResearchScout
+5. FrontendEngineer
+6. BackendEngineer
+7. CodexCoder
 
-After that, hire yourself a Founding Engineer agent and then plan the roadmap and tasks for your new company.`;
+Your first deliverable is not just a working CEO agent. Create the first company roadmap, define the initial specialist roles, and create the first kickoff issue so the company can actually start operating.`;
 
 export function OnboardingWizard() {
   const { onboardingOpen, onboardingOptions, closeOnboarding } = useDialog();
@@ -112,7 +119,7 @@ export function OnboardingWizard() {
 
   // Step 2
   const [agentName, setAgentName] = useState("CEO");
-  const [adapterType, setAdapterType] = useState<AdapterType>("claude_local");
+  const [adapterType, setAdapterType] = useState<AdapterType>("codex_local");
   const [cwd, setCwd] = useState("");
   const [model, setModel] = useState("");
   const [command, setCommand] = useState("");
@@ -128,7 +135,7 @@ export function OnboardingWizard() {
   const [showMoreAdapters, setShowMoreAdapters] = useState(false);
 
   // Step 3
-  const [taskTitle, setTaskTitle] = useState("Create your CEO HEARTBEAT.md");
+  const [taskTitle, setTaskTitle] = useState("Bootstrap your operator OS CEO");
   const [taskDescription, setTaskDescription] = useState(
     DEFAULT_TASK_DESCRIPTION
   );

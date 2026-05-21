@@ -185,15 +185,15 @@ function OnboardingRoutePage() {
     : null;
 
   const title = matchedCompany
-    ? `Add another agent to ${matchedCompany.name}`
+    ? `Add another specialist to ${matchedCompany.name}`
     : companies.length > 0
-      ? "Create another company"
-      : "Create your first company";
+      ? "Create another operator company"
+      : "Create your first operator company";
   const description = matchedCompany
-    ? "Run onboarding again to add an agent and a starter task for this company."
+    ? "Run onboarding again to add another specialist and starter task for this company."
     : companies.length > 0
-      ? "Run onboarding again to create another company and seed its first agent."
-      : "Get started by creating a company and your first agent.";
+      ? "Run onboarding again to create another operator company and seed its first specialist."
+      : "Get started by creating a company, a CEO, and the first specialist team.";
 
   return (
     <div className="mx-auto max-w-xl py-10">
@@ -208,7 +208,7 @@ function OnboardingRoutePage() {
                 : openOnboarding()
             }
           >
-            {matchedCompany ? "Add Agent" : "Start Onboarding"}
+            {matchedCompany ? "Add Specialist" : "Start Onboarding"}
           </Button>
         </div>
       </div>
@@ -275,9 +275,9 @@ function NoCompaniesStartPage() {
   return (
     <div className="mx-auto max-w-xl py-10">
       <div className="rounded-lg border border-border bg-card p-6">
-        <h1 className="text-xl font-semibold">Create your first company</h1>
+        <h1 className="text-xl font-semibold">Create your first operator company</h1>
         <p className="mt-2 text-sm text-muted-foreground">
-          Get started by creating a company.
+          Get started by creating a company, a CEO, and the first specialist team.
         </p>
         <div className="mt-4">
           <Button onClick={() => openOnboarding()}>New Company</Button>

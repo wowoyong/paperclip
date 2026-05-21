@@ -5,6 +5,8 @@ summary: Get Paperclip running in minutes
 
 Get Paperclip running locally in under 5 minutes.
 
+If you're using the `wowoyong/paperclip` fork as a personal operator OS, prefer `codex_local` for your CEO and build a specialist team early instead of relying on one generalist agent.
+
 ## Quick Start (Recommended)
 
 ```sh
@@ -40,10 +42,24 @@ Once Paperclip is running:
 
 1. Create your first company in the web UI
 2. Define a company goal
-3. Create a CEO agent and configure its adapter
-4. Build out the org chart with more agents
-5. Set budgets and assign initial tasks
+3. Create a CEO agent and configure `codex_local`
+4. Add a first specialist team: `ChiefOfStaff`, `ProductPlanner`, `ResearchArchivist`, `ResearchScout`, `FrontendEngineer`, `BackendEngineer`, `CodexCoder`
+5. Create the first kickoff issue and route it through the specialist team
 6. Hit go — agents start their heartbeats and the company runs
+
+## wowoyong fork starter path
+
+If you want the opinionated `wowoyong` fork workflow, see:
+
+- `examples/wowoyong-personal-os/`
+- `docs/start/wowoyong-fork.md`
+
+This fork is optimized around:
+
+- Telegram/OpenClaw intake
+- specialist-team routing
+- `mac-wiki` knowledge capture
+- Korean operator workflows
 
 <Card title="Core Concepts" href="/start/core-concepts">
   Learn the key concepts behind Paperclip

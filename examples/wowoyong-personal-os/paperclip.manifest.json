@@ -1,0 +1,294 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-05-21T00:00:00.000Z",
+  "source": null,
+  "includes": {
+    "company": true,
+    "agents": true
+  },
+  "company": {
+    "path": "COMPANY.md",
+    "name": "wowoyong Personal OS",
+    "description": "Operator-style specialist agent company for planning, research, execution, and durable knowledge capture.",
+    "brandColor": "#0f766e",
+    "requireBoardApprovalForNewAgents": true
+  },
+  "agents": [
+    {
+      "slug": "ceo",
+      "name": "CEO",
+      "path": "agents/ceo/AGENTS.md",
+      "role": "ceo",
+      "title": "Operator CEO",
+      "icon": null,
+      "capabilities": "Company direction, org design, and final prioritization.",
+      "reportsToSlug": null,
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {
+        "canCreateAgents": true
+      },
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "chiefofstaff",
+      "name": "ChiefOfStaff",
+      "path": "agents/chiefofstaff/AGENTS.md",
+      "role": "pm",
+      "title": "Chief of Staff",
+      "icon": "target",
+      "capabilities": "Operations coordination, handoffs, agendas, and execution hygiene.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "search": true,
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "productplanner",
+      "name": "ProductPlanner",
+      "path": "agents/productplanner/AGENTS.md",
+      "role": "pm",
+      "title": "Product Planner",
+      "icon": "lightbulb",
+      "capabilities": "Requirements, scope, milestones, acceptance criteria, and roadmap shaping.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "search": true,
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "researcharchivist",
+      "name": "ResearchArchivist",
+      "path": "agents/researcharchivist/AGENTS.md",
+      "role": "researcher",
+      "title": "Research Archivist",
+      "icon": "microscope",
+      "capabilities": "Primary sources, citations, evidence packs, and dated factual research.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "search": true,
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "researchscout",
+      "name": "ResearchScout",
+      "path": "agents/researchscout/AGENTS.md",
+      "role": "researcher",
+      "title": "Research Scout",
+      "icon": "search",
+      "capabilities": "Comparisons, recommendations, pricing briefs, and current-state research.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "search": true,
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "uxuidesigner",
+      "name": "UXUIDesigner",
+      "path": "agents/uxuidesigner/AGENTS.md",
+      "role": "designer",
+      "title": "UX/UI Design Engineer",
+      "icon": "sparkles",
+      "capabilities": "User flows, UI states, interface structure, and implementation-ready design specs.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "frontendengineer",
+      "name": "FrontendEngineer",
+      "path": "agents/frontendengineer/AGENTS.md",
+      "role": "engineer",
+      "title": "Frontend Engineer",
+      "icon": "atom",
+      "capabilities": "Routes, components, state, and frontend implementation.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "backendengineer",
+      "name": "BackendEngineer",
+      "path": "agents/backendengineer/AGENTS.md",
+      "role": "engineer",
+      "title": "Backend Engineer",
+      "icon": "database",
+      "capabilities": "APIs, schema, jobs, integrations, and backend reliability.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "codexcoder",
+      "name": "CodexCoder",
+      "path": "agents/codexcoder/AGENTS.md",
+      "role": "engineer",
+      "title": "Codex Engineer",
+      "icon": null,
+      "capabilities": "Cross-cutting implementation, debugging, setup, and automation fallback.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    },
+    {
+      "slug": "foundingengineer",
+      "name": "FoundingEngineer",
+      "path": "agents/foundingengineer/AGENTS.md",
+      "role": "engineer",
+      "title": "Founding Engineer",
+      "icon": "code",
+      "capabilities": "Full-stack architecture and end-to-end delivery for hard cross-layer work.",
+      "reportsToSlug": "ceo",
+      "adapterType": "codex_local",
+      "adapterConfig": {
+        "model": "gpt-5.3-codex",
+        "graceSec": 20,
+        "timeoutSec": 1800,
+        "dangerouslyBypassApprovalsAndSandbox": true
+      },
+      "runtimeConfig": {
+        "heartbeat": {
+          "enabled": true,
+          "intervalSec": 1800,
+          "maxConcurrentRuns": 1
+        }
+      },
+      "permissions": {},
+      "budgetMonthlyCents": 0,
+      "metadata": null
+    }
+  ],
+  "requiredSecrets": []
+}
