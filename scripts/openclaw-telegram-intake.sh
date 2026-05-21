@@ -2,17 +2,196 @@
 
 set -euo pipefail
 
-if [[ $# -lt 1 ]]; then
-  echo "usage: $0 '<telegram request text>'" >&2
-  exit 1
-fi
-
-REQUEST_TEXT="$*"
 COMPANY_ID="cf91355d-699c-419d-91c9-27c0e783b8e0"
 GOAL_ID="720afb2f-6ec2-4dd9-ba22-ed56cc20dcca"
 API_URL_DEFAULT="http://127.0.0.1:3050"
 BRIDGE_KEY_FILE="${HOME}/.openclaw/credentials/paperclip-bridge-api-key.json"
 CLAIMED_KEY_FILE="${HOME}/.openclaw/workspace/paperclip-claimed-api-key.json"
+
+determine_routing() {
+  local request_text="$1"
+  local lower_text
+  lower_text="$(printf '%s' "$request_text" | tr '[:upper:]' '[:lower:]')"
+
+  ASSIGNEE_ID="$CHIEF_ID"
+  ASSIGNEE_NAME="ChiefOfStaff"
+  ROUTE_REASON="defaulted to operations coordination"
+  NEW_PROJECT_INTENT=0
+  COMPLEXITY="simple"
+  CORE_AGENT_NAME=""
+  HAS_STRATEGIC_INTENT=0
+
+  HAS_ARCHIVE_INTENT=0
+  HAS_RESEARCH_INTENT=0
+  HAS_UX_INTENT=0
+  HAS_FRONTEND_INTENT=0
+  HAS_BACKEND_INTENT=0
+  HAS_IMPLEMENT_INTENT=0
+  HAS_PLANNING_INTENT=0
+  HAS_OPERATIONS_INTENT=0
+
+  if [[ "$lower_text" =~ (source\ pack|evidence|citation|citations|references|reference|archive|raw\ source|1차\ 자료|출처|레퍼런스|근거\ 자료|자료\ 수집|아카이브) ]]; then
+    HAS_ARCHIVE_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (compare|pricing|price|latest|docs|documentation|vendor|research|recommend|recommendation|policy|policies|terms|조사|비교|가격|최신|문서|업체|추천|정책|약관) ]]; then
+    HAS_RESEARCH_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (ux|ui|wireframe|user\ flow|empty\ state|loading\ state|error\ state|screen\ flow|디자인|화면\ 구조|사용자\ 흐름|와이어프레임|상태\ 설계) ]]; then
+    HAS_UX_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (frontend|front-end|react|next\.js|component|route|client\ state|프론트엔드|프론트|컴포넌트|라우트|화면\ 구현) ]]; then
+    HAS_FRONTEND_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (backend|back-end|api|schema|database|worker|queue|auth|integration|백엔드|서버|인증|스키마|데이터베이스|잡\ 작업|연동) ]]; then
+    HAS_BACKEND_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (implement|setup|script|debug|fix|code|repo|automation|개발|구현|설치|스크립트|디버그|버그|코드|자동화|수정안) ]]; then
+    HAS_IMPLEMENT_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (requirements|requirement|scope|milestone|acceptance\ criteria|user\ story|prd|product\ plan|기획|요구사항|범위|마일스톤|우선순위|수용\ 기준|기능\ 정의) ]]; then
+    HAS_PLANNING_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (new\ project|project\ kickoff|kickoff|project\ start|start\ a\ project|새\ 프로젝트|프로젝트\ 시작|프로젝트\ 킥오프|프로젝트\ 만들|신규\ 프로젝트) ]]; then
+    NEW_PROJECT_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (agenda|follow-up|follow\ up|checklist|plan|planning|remind|summary|status|meeting|일정|체크리스트|계획|플랜|리마인드|요약|상태|미팅|회의) ]]; then
+    HAS_OPERATIONS_INTENT=1
+  fi
+
+  if [[ "$lower_text" =~ (strategy|strategic|governance|org\ design|operating\ model|priority|portfolio|budget|executive|company-wide|전략|거버넌스|조직\ 설계|운영모델|우선순위|포트폴리오|예산|전사|임원) ]]; then
+    HAS_STRATEGIC_INTENT=1
+  fi
+
+  IMPLEMENTATION_INTENT_COUNT=$((HAS_UX_INTENT + HAS_FRONTEND_INTENT + HAS_BACKEND_INTENT + HAS_IMPLEMENT_INTENT + HAS_PLANNING_INTENT))
+  TOTAL_ACTIVE_INTENTS=$((HAS_ARCHIVE_INTENT + HAS_RESEARCH_INTENT + HAS_UX_INTENT + HAS_FRONTEND_INTENT + HAS_BACKEND_INTENT + HAS_IMPLEMENT_INTENT + HAS_PLANNING_INTENT + HAS_OPERATIONS_INTENT))
+
+  if [[ "$HAS_STRATEGIC_INTENT" -eq 1 ]]; then
+    COMPLEXITY="strategic"
+    CORE_AGENT_NAME="CEO"
+  elif [[ "$NEW_PROJECT_INTENT" -eq 1 || "$TOTAL_ACTIVE_INTENTS" -ge 3 ]]; then
+    COMPLEXITY="complex"
+    CORE_AGENT_NAME="ChiefOfStaff"
+  elif [[ "$TOTAL_ACTIVE_INTENTS" -eq 2 || "$HAS_OPERATIONS_INTENT" -eq 1 || "$HAS_PLANNING_INTENT" -eq 1 ]]; then
+    COMPLEXITY="moderate"
+    CORE_AGENT_NAME="ChiefOfStaff"
+  fi
+
+  if [[ "$HAS_STRATEGIC_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$CHIEF_ID"
+    ASSIGNEE_NAME="ChiefOfStaff"
+    ROUTE_REASON="matched strategic intent; requires CEO-supervised coordination"
+  elif [[ "$NEW_PROJECT_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$CHIEF_ID"
+    ASSIGNEE_NAME="ChiefOfStaff"
+    ROUTE_REASON="matched new project / kickoff coordination intent"
+  elif [[ "$HAS_RESEARCH_INTENT" -eq 1 && "$IMPLEMENTATION_INTENT_COUNT" -ge 1 ]]; then
+    ASSIGNEE_ID="$CHIEF_ID"
+    ASSIGNEE_NAME="ChiefOfStaff"
+    ROUTE_REASON="matched mixed request (research + implementation); route through supervisor for research-first decomposition"
+  elif [[ "$HAS_ARCHIVE_INTENT" -eq 1 && "$HAS_RESEARCH_INTENT" -eq 0 && "$IMPLEMENTATION_INTENT_COUNT" -eq 0 ]]; then
+    ASSIGNEE_ID="$ARCHIVIST_ID"
+    ASSIGNEE_NAME="ResearchArchivist"
+    ROUTE_REASON="matched source gathering / evidence intent"
+  elif [[ "$HAS_RESEARCH_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$RESEARCH_ID"
+    ASSIGNEE_NAME="ResearchScout"
+    ROUTE_REASON="matched research / comparison intent"
+  elif [[ "$HAS_PLANNING_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$PLANNER_ID"
+    ASSIGNEE_NAME="ProductPlanner"
+    ROUTE_REASON="matched product planning / requirements intent"
+  elif [[ "$HAS_UX_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$UX_ID"
+    ASSIGNEE_NAME="UXUIDesigner"
+    ROUTE_REASON="matched ux / interface design intent"
+  elif [[ "$HAS_FRONTEND_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$FRONTEND_ID"
+    ASSIGNEE_NAME="FrontendEngineer"
+    ROUTE_REASON="matched frontend implementation intent"
+  elif [[ "$HAS_BACKEND_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$BACKEND_ID"
+    ASSIGNEE_NAME="BackendEngineer"
+    ROUTE_REASON="matched backend implementation intent"
+  elif [[ "$HAS_IMPLEMENT_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$CODEX_ID"
+    ASSIGNEE_NAME="CodexCoder"
+    ROUTE_REASON="matched implementation / automation intent"
+  elif [[ "$HAS_OPERATIONS_INTENT" -eq 1 ]]; then
+    ASSIGNEE_ID="$CHIEF_ID"
+    ASSIGNEE_NAME="ChiefOfStaff"
+    ROUTE_REASON="matched operations / planning intent"
+  fi
+
+  if [[ "$ASSIGNEE_NAME" == "CEO" ]]; then
+    COMPLEXITY="strategic"
+    CORE_AGENT_NAME="CEO"
+  elif [[ "$ASSIGNEE_NAME" == "FoundingEngineer" ]]; then
+    COMPLEXITY="complex"
+    CORE_AGENT_NAME="FoundingEngineer"
+  elif [[ "$ASSIGNEE_NAME" == "ChiefOfStaff" ]]; then
+    if [[ "$COMPLEXITY" == "simple" ]]; then
+      COMPLEXITY="moderate"
+    fi
+    CORE_AGENT_NAME="$ASSIGNEE_NAME"
+  fi
+}
+
+run_self_test() {
+  CHIEF_ID="chief"
+  RESEARCH_ID="research"
+  CODEX_ID="codex"
+  PLANNER_ID="planner"
+  ARCHIVIST_ID="archivist"
+  UX_ID="ux"
+  FRONTEND_ID="frontend"
+  BACKEND_ID="backend"
+
+  local failures=0
+  local text
+  local expected
+  local label
+
+  while IFS='|' read -r label text expected; do
+    determine_routing "$text"
+    if [[ "$ASSIGNEE_NAME" != "$expected" ]]; then
+      echo "FAIL [$label] expected=$expected actual=$ASSIGNEE_NAME"
+      failures=$((failures + 1))
+    else
+      echo "PASS [$label] => $ASSIGNEE_NAME"
+    fi
+  done <<'EOF'
+mixed-ko|OpenAI/Anthropic 가격·정책 최신 비교 + 서버 자동화 코드 수정안 제안|ChiefOfStaff
+mixed-en|Compare latest OpenAI policy/pricing and patch backend automation script|ChiefOfStaff
+research-heavy-db|최신 Supabase와 Neon 가격/정책 차이를 비교해서 어떤 걸 기본 DB로 쓰는 게 나은지 추천안 정리해줘|ResearchScout
+research-with-ticketing|최신 Supabase와 Neon 가격/정책 차이를 비교해서 추천안 정리하고 Paperclip 이슈로 만들고 담당자 배정까지 해줘|ResearchScout
+research-only|OpenAI/Anthropic latest pricing and policy comparison with references|ResearchScout
+EOF
+
+  if [[ "$failures" -ne 0 ]]; then
+    return 1
+  fi
+}
+
+if [[ "${1:-}" == "--self-test" ]]; then
+  run_self_test
+  exit 0
+fi
+
+if [[ $# -lt 1 ]]; then
+  echo "usage: $0 '<telegram request text>'" >&2
+  echo "       $0 --self-test" >&2
+  exit 1
+fi
+
+REQUEST_TEXT="$*"
 
 KEY_FILE="$BRIDGE_KEY_FILE"
 if [[ ! -f "$KEY_FILE" ]]; then
@@ -67,67 +246,7 @@ if [[ -z "$CHIEF_ID" || -z "$RESEARCH_ID" || -z "$CODEX_ID" || -z "$PLANNER_ID" 
   exit 1
 fi
 
-LOWER_TEXT="$(printf '%s' "$REQUEST_TEXT" | tr '[:upper:]' '[:lower:]')"
-
-ASSIGNEE_ID="$CHIEF_ID"
-ASSIGNEE_NAME="ChiefOfStaff"
-ROUTE_REASON="defaulted to operations coordination"
-NEW_PROJECT_INTENT=0
-
-if [[ "$LOWER_TEXT" =~ (source\ pack|evidence|citation|citations|references|reference|archive|raw\ source|1차\ 자료|출처|레퍼런스|근거\ 자료|자료\ 수집|아카이브) ]]; then
-  ASSIGNEE_ID="$ARCHIVIST_ID"
-  ASSIGNEE_NAME="ResearchArchivist"
-  ROUTE_REASON="matched source gathering / evidence intent"
-fi
-
-if [[ "$ASSIGNEE_NAME" != "ResearchArchivist" && "$LOWER_TEXT" =~ (compare|pricing|price|latest|docs|documentation|vendor|research|recommend|recommendation|조사|비교|가격|최신|문서|업체|추천) ]]; then
-  ASSIGNEE_ID="$RESEARCH_ID"
-  ASSIGNEE_NAME="ResearchScout"
-  ROUTE_REASON="matched research / comparison intent"
-fi
-
-if [[ "$LOWER_TEXT" =~ (ux|ui|wireframe|user\ flow|empty\ state|loading\ state|error\ state|screen\ flow|디자인|화면\ 구조|사용자\ 흐름|와이어프레임|상태\ 설계) ]]; then
-  ASSIGNEE_ID="$UX_ID"
-  ASSIGNEE_NAME="UXUIDesigner"
-  ROUTE_REASON="matched ux / interface design intent"
-fi
-
-if [[ "$LOWER_TEXT" =~ (frontend|front-end|react|next\.js|component|route|client\ state|프론트엔드|프론트|컴포넌트|라우트|화면\ 구현) ]]; then
-  ASSIGNEE_ID="$FRONTEND_ID"
-  ASSIGNEE_NAME="FrontendEngineer"
-  ROUTE_REASON="matched frontend implementation intent"
-fi
-
-if [[ "$LOWER_TEXT" =~ (backend|back-end|api|schema|database|db|worker|queue|auth|integration|백엔드|서버|인증|스키마|데이터베이스|잡\ 작업|연동) ]]; then
-  ASSIGNEE_ID="$BACKEND_ID"
-  ASSIGNEE_NAME="BackendEngineer"
-  ROUTE_REASON="matched backend implementation intent"
-fi
-
-if [[ "$ASSIGNEE_NAME" == "ChiefOfStaff" && "$LOWER_TEXT" =~ (implement|setup|script|debug|fix|code|repo|automation|개발|구현|설치|스크립트|디버그|버그|코드|자동화) ]]; then
-  ASSIGNEE_ID="$CODEX_ID"
-  ASSIGNEE_NAME="CodexCoder"
-  ROUTE_REASON="matched implementation / automation intent"
-fi
-
-if [[ "$LOWER_TEXT" =~ (requirements|requirement|scope|milestone|acceptance\ criteria|user\ story|prd|product\ plan|기획|요구사항|범위|마일스톤|우선순위|수용\ 기준|기능\ 정의) ]]; then
-  ASSIGNEE_ID="$PLANNER_ID"
-  ASSIGNEE_NAME="ProductPlanner"
-  ROUTE_REASON="matched product planning / requirements intent"
-fi
-
-if [[ "$LOWER_TEXT" =~ (new\ project|project\ kickoff|kickoff|project\ start|start\ a\ project|새\ 프로젝트|프로젝트\ 시작|프로젝트\ 킥오프|프로젝트\ 만들|신규\ 프로젝트) ]]; then
-  ASSIGNEE_ID="$CHIEF_ID"
-  ASSIGNEE_NAME="ChiefOfStaff"
-  ROUTE_REASON="matched new project / kickoff coordination intent"
-  NEW_PROJECT_INTENT=1
-fi
-
-if [[ "$ASSIGNEE_NAME" == "ChiefOfStaff" && "$NEW_PROJECT_INTENT" -eq 0 && "$LOWER_TEXT" =~ (agenda|follow-up|follow up|checklist|plan|planning|remind|summary|status|meeting|일정|체크리스트|계획|플랜|리마인드|요약|상태|미팅|회의) ]]; then
-  ASSIGNEE_ID="$CHIEF_ID"
-  ASSIGNEE_NAME="ChiefOfStaff"
-  ROUTE_REASON="matched operations / planning intent"
-fi
+determine_routing "$REQUEST_TEXT"
 
 TITLE_SOURCE="$(printf '%s' "$REQUEST_TEXT" | tr '\n' ' ' | sed 's/[[:space:]]\+/ /g' | sed 's/^ //; s/ $//')"
 TITLE_TRIMMED="$(printf '%s' "$TITLE_SOURCE" | cut -c1-72)"
@@ -137,6 +256,8 @@ DESCRIPTION=$(jq -n \
   --arg req "$REQUEST_TEXT" \
   --arg owner "$ASSIGNEE_NAME" \
   --arg reason "$ROUTE_REASON" \
+  --arg complexity "$COMPLEXITY" \
+  --arg core "${CORE_AGENT_NAME:-}" \
   '[
     "Source: Telegram via OpenClaw",
     "",
@@ -144,6 +265,8 @@ DESCRIPTION=$(jq -n \
     $req,
     "",
     "Routing:",
+    ("- Complexity: " + $complexity),
+    (if $core != "" then "- Core agent: " + $core else empty end),
     ("- Owner: " + $owner),
     ("- Reason: " + $reason)
   ] | join("\n")')
