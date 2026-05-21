@@ -1081,26 +1081,6 @@ export function issueRoutes(db: Db, storage: StorageService) {
     const actor = getActorInfo(req);
     const hasFieldChanges = Object.keys(previous).length > 0;
 
-    try {
-      await issueReportsSvc.upsertIssueReport(issue.id, {
-        changeSummary: commentBody ? "Refresh status report after issue update + comment" : "Refresh status report after issue update",
-        createdByAgentId: actor.agentId ?? null,
-        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-      });
-    } catch (err) {
-      logger.warn({ err, issueId: issue.id }, "failed to refresh issue report after update");
-    }
-
-    try {
-      await telegramNotifySvc.notifyIssueStatusChange(issue.id, {
-        previousStatus: existing.status,
-        createdByAgentId: actor.agentId ?? null,
-        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
-      });
-    } catch (err) {
-      logger.warn({ err, issueId: issue.id }, "failed to send telegram status update after issue patch");
-    }
-
     await logActivity(db, {
       companyId: issue.companyId,
       actorType: actor.actorType,
@@ -1143,6 +1123,26 @@ export function issueRoutes(db: Db, storage: StorageService) {
         },
       });
 
+    }
+
+    try {
+      await issueReportsSvc.upsertIssueReport(issue.id, {
+        changeSummary: commentBody ? "Refresh status report after issue update + comment" : "Refresh status report after issue update",
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to refresh issue report after update");
+    }
+
+    try {
+      await telegramNotifySvc.notifyIssueStatusChange(issue.id, {
+        previousStatus: existing.status,
+        createdByAgentId: actor.agentId ?? null,
+        createdByUserId: actor.actorType === "user" ? actor.actorId : null,
+      });
+    } catch (err) {
+      logger.warn({ err, issueId: issue.id }, "failed to send telegram status update after issue patch");
     }
 
     const assigneeChanged = assigneeWillChange;
