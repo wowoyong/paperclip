@@ -75,6 +75,14 @@ export interface RegisteredTool {
 export interface ToolListFilter {
   /** Only return tools owned by this plugin. */
   pluginId?: string;
+  /** If set, only tools from these plugins remain visible. */
+  allowedPluginIds?: string[];
+  /** Tools from these plugins are always hidden. */
+  deniedPluginIds?: string[];
+  /** If set, only these fully namespaced tool names remain visible. */
+  allowedToolNames?: string[];
+  /** These fully namespaced tool names are always hidden. */
+  deniedToolNames?: string[];
 }
 
 /**
@@ -254,6 +262,31 @@ export function createPluginToolRegistry(
     };
   }
 
+  function normalizeFilterValues(values: string[] | undefined): Set<string> | null {
+    if (!Array.isArray(values)) return null;
+    const normalized = values.map((value) => value.trim()).filter(Boolean);
+    return normalized.length > 0 ? new Set(normalized) : null;
+  }
+
+  function matchesFilter(tool: RegisteredTool, filter?: ToolListFilter): boolean {
+    if (!filter) return true;
+    if (filter.pluginId && tool.pluginId !== filter.pluginId) return false;
+
+    const allowedPluginIds = normalizeFilterValues(filter.allowedPluginIds);
+    if (allowedPluginIds && !allowedPluginIds.has(tool.pluginId)) return false;
+
+    const deniedPluginIds = normalizeFilterValues(filter.deniedPluginIds);
+    if (deniedPluginIds?.has(tool.pluginId)) return false;
+
+    const allowedToolNames = normalizeFilterValues(filter.allowedToolNames);
+    if (allowedToolNames && !allowedToolNames.has(tool.namespacedName)) return false;
+
+    const deniedToolNames = normalizeFilterValues(filter.deniedToolNames);
+    if (deniedToolNames?.has(tool.namespacedName)) return false;
+
+    return true;
+  }
+
   function addTool(pluginId: string, decl: PluginToolDeclaration, pluginDbId: string): void {
     const namespacedName = buildName(pluginId, decl.name);
 
@@ -353,12 +386,12 @@ export function createPluginToolRegistry(
         const result: RegisteredTool[] = [];
         for (const name of pluginTools) {
           const tool = byNamespace.get(name);
-          if (tool) result.push(tool);
+          if (tool && matchesFilter(tool, filter)) result.push(tool);
         }
         return result;
       }
 
-      return Array.from(byNamespace.values());
+      return Array.from(byNamespace.values()).filter((tool) => matchesFilter(tool, filter));
     },
 
     parseNamespacedName(namespacedName: string): { pluginId: string; toolName: string } | null {
@@ -401,9 +434,14 @@ export function createPluginToolRegistry(
         );
       }
 
-      // 4. Verify the plugin worker is running (use DB UUID for worker lookup)
+      // 4. Verify the plugin worker is running.
+      // Prefer the DB UUID, but tolerate key-based worker registration in
+      // development/example plugin flows so installed local examples remain executable.
       const dbId = tool.pluginDbId;
-      if (!workerManager.isRunning(dbId)) {
+      const workerLookupId = workerManager.isRunning(dbId)
+        ? dbId
+        : (workerManager.isRunning(pluginId) ? pluginId : null);
+      if (!workerLookupId) {
         throw new Error(
           `Cannot execute tool "${namespacedName}" — ` +
           `worker for plugin "${pluginId}" is not running.`,
@@ -412,7 +450,15 @@ export function createPluginToolRegistry(
 
       // 5. Dispatch the executeTool RPC call to the worker
       log.debug(
-        { pluginId, pluginDbId: dbId, toolName, namespacedName, agentId: runContext.agentId, runId: runContext.runId },
+        {
+          pluginId,
+          pluginDbId: dbId,
+          workerLookupId,
+          toolName,
+          namespacedName,
+          agentId: runContext.agentId,
+          runId: runContext.runId,
+        },
         "executing tool via plugin worker",
       );
 
@@ -422,7 +468,7 @@ export function createPluginToolRegistry(
         runContext,
       };
 
-      const result = await workerManager.call(dbId, "executeTool", rpcParams);
+      const result = await workerManager.call(workerLookupId, "executeTool", rpcParams);
 
       log.debug(
         {

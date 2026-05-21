@@ -36,6 +36,7 @@ import {
   PLUGIN_STATUSES,
 } from "@paperclipai/shared";
 import { pluginRegistryService } from "../services/plugin-registry.js";
+import { agentService } from "../services/agents.js";
 import { pluginLifecycleManager } from "../services/plugin-lifecycle.js";
 import { getPluginUiContributionMetadata, pluginLoader } from "../services/plugin-loader.js";
 import { logActivity } from "../services/activity-log.js";
@@ -139,6 +140,14 @@ const BUNDLED_PLUGIN_EXAMPLES: AvailablePluginExample[] = [
     localPath: "packages/plugins/examples/plugin-kitchen-sink-example",
     tag: "example",
   },
+  {
+    packageName: "@paperclipai/plugin-mcp-gateway-example",
+    pluginKey: "paperclip.mcp-gateway",
+    displayName: "MCP Gateway (Example)",
+    description: "Worker-only example plugin that centralizes agent-facing MCP access behind a curated Paperclip tool surface and audit log.",
+    localPath: "packages/plugins/examples/plugin-mcp-gateway-example",
+    tag: "example",
+  },
 ];
 
 function listBundledPluginExamples(): AvailablePluginExample[] {
@@ -227,6 +236,13 @@ export interface PluginRouteToolDeps {
   toolDispatcher: PluginToolDispatcher;
 }
 
+type AgentMcpToolFilter = {
+  allowedPluginIds: string[];
+  deniedPluginIds: string[];
+  allowedToolNames: string[];
+  deniedToolNames: string[];
+};
+
 /**
  * Optional dependencies for plugin UI bridge routes.
  *
@@ -308,6 +324,67 @@ export function pluginRoutes(
   bridgeDeps?: PluginRouteBridgeDeps,
 ) {
   const router = Router();
+  const agentsSvc = agentService(db);
+
+  function asRecord(value: unknown): Record<string, unknown> | null {
+    if (typeof value !== "object" || value === null || Array.isArray(value)) return null;
+    return value as Record<string, unknown>;
+  }
+
+  function asStringArray(value: unknown): string[] {
+    return Array.isArray(value)
+      ? value
+          .map((entry) => (typeof entry === "string" ? entry.trim() : ""))
+          .filter(Boolean)
+      : [];
+  }
+
+  function parseAgentMcpToolFilter(runtimeConfig: unknown): AgentMcpToolFilter | null {
+    const runtime = asRecord(runtimeConfig);
+    const raw = asRecord(runtime?.mcpToolFilter);
+    if (!raw) return null;
+
+    const filter: AgentMcpToolFilter = {
+      allowedPluginIds: asStringArray(raw.allowedPluginIds),
+      deniedPluginIds: asStringArray(raw.deniedPluginIds),
+      allowedToolNames: asStringArray(raw.allowedToolNames),
+      deniedToolNames: asStringArray(raw.deniedToolNames),
+    };
+
+    if (
+      filter.allowedPluginIds.length === 0 &&
+      filter.deniedPluginIds.length === 0 &&
+      filter.allowedToolNames.length === 0 &&
+      filter.deniedToolNames.length === 0
+    ) {
+      return null;
+    }
+
+    return filter;
+  }
+
+  function buildToolListFilter(agentRuntimeConfig: unknown, pluginId?: string) {
+    const filter = parseAgentMcpToolFilter(agentRuntimeConfig);
+    return {
+      ...(pluginId ? { pluginId } : {}),
+      ...(filter?.allowedPluginIds?.length ? { allowedPluginIds: filter.allowedPluginIds } : {}),
+      ...(filter?.deniedPluginIds?.length ? { deniedPluginIds: filter.deniedPluginIds } : {}),
+      ...(filter?.allowedToolNames?.length ? { allowedToolNames: filter.allowedToolNames } : {}),
+      ...(filter?.deniedToolNames?.length ? { deniedToolNames: filter.deniedToolNames } : {}),
+    };
+  }
+
+  function isToolAllowedForAgent(toolName: string, agentRuntimeConfig: unknown): boolean {
+    const filter = parseAgentMcpToolFilter(agentRuntimeConfig);
+    if (!filter) return true;
+    const pluginId = toolName.includes(":") ? toolName.slice(0, toolName.lastIndexOf(":")) : toolName;
+
+    if (filter.allowedPluginIds?.length && !filter.allowedPluginIds.includes(pluginId)) return false;
+    if (filter.deniedPluginIds?.includes(pluginId)) return false;
+    if (filter.allowedToolNames?.length && !filter.allowedToolNames.includes(toolName)) return false;
+    if (filter.deniedToolNames?.includes(toolName)) return false;
+    return true;
+  }
   const registry = pluginRegistryService(db);
   const lifecycle = pluginLifecycleManager(db, {
     loader,
@@ -491,6 +568,20 @@ export function pluginRoutes(
     }
 
     const pluginId = req.query.pluginId as string | undefined;
+    const agentId = req.query.agentId as string | undefined;
+    if (agentId) {
+      const agent = await agentsSvc.getById(agentId);
+      if (!agent) {
+        res.status(404).json({ error: "Agent not found" });
+        return;
+      }
+      assertCompanyAccess(req, agent.companyId);
+      const filter = buildToolListFilter(agent.runtimeConfig, pluginId);
+      const tools = toolDeps.toolDispatcher.listToolsForAgent(filter);
+      res.json(tools);
+      return;
+    }
+
     const filter = pluginId ? { pluginId } : undefined;
     const tools = toolDeps.toolDispatcher.listToolsForAgent(filter);
     res.json(tools);
@@ -552,10 +643,21 @@ export function pluginRoutes(
 
     assertCompanyAccess(req, runContext.companyId);
 
+    const agent = await agentsSvc.getById(runContext.agentId);
+    if (!agent || agent.companyId !== runContext.companyId) {
+      res.status(404).json({ error: `Agent "${runContext.agentId}" not found for company` });
+      return;
+    }
+
     // Verify the tool exists
     const registeredTool = toolDeps.toolDispatcher.getTool(tool);
     if (!registeredTool) {
       res.status(404).json({ error: `Tool "${tool}" not found` });
+      return;
+    }
+
+    if (!isToolAllowedForAgent(tool, agent.runtimeConfig)) {
+      res.status(403).json({ error: `Tool "${tool}" is blocked by the agent MCP tool filter` });
       return;
     }
 
